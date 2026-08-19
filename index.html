@@ -12,21 +12,25 @@
 /* ---------- design tokens (light) ---------- */
 :root{
   color-scheme: light;
-  --page:#f9f9f7; --surface:#fcfcfb; --ink:#0b0b0b; --ink-2:#52514e; --muted:#898781;
-  --grid:#e1e0d9; --baseline:#c3c2b7; --ring:rgba(11,11,11,.10);
-  --accent:#2a78d6; --accent-soft:#cde2fb;
+  --page:#faf6ee; --surface:#ffffff; --ink:#33302b; --ink-2:#615c52; --muted:#948f85;
+  --grid:#efeade; --baseline:#d8d2c6; --ring:rgba(70,55,25,.09);
+  --accent:#2a78d6; --accent-soft:#dbe7fa;
   --d1:#86b6ef; --d2:#3987e5; --d3:#1c5cab; --d4:#0d366b;       /* ordinal depth ramp */
   --good:#0ca30c; --warn:#fab219; --serious:#ec835a; --critical:#d03b3b;
   --up:#006300;
+  --tint-lav:#eef0fc; --tint-mint:#e7f4ec; --tint-peach:#fdeee2; --tint-sky:#e9f2fc; --tint-rose:#fbeaf0; --tint-butter:#faf2d7;
+  --shadow:0 2px 10px rgba(90,70,30,.07);
 }
 @media (prefers-color-scheme: dark){
   :root{
     color-scheme: dark;
-    --page:#0d0d0d; --surface:#1a1a19; --ink:#ffffff; --ink-2:#c3c2b7; --muted:#898781;
-    --grid:#2c2c2a; --baseline:#383835; --ring:rgba(255,255,255,.10);
-    --accent:#3987e5; --accent-soft:#104281;
-    --d1:#b7d3f6; --d2:#6da7ec; --d3:#2a78d6; --d4:#184f95;
+    --page:#211e19; --surface:#2b2722; --ink:#f5f1e8; --ink-2:#cbc4b6; --muted:#98917f;
+    --grid:#3a352c; --baseline:#4a4438; --ring:rgba(255,245,225,.09);
+    --accent:#5a99ea; --accent-soft:#28425f;
+    --d1:#b7d3f6; --d2:#6da7ec; --d3:#2a78d6; --d4:#1c5cab;
     --up:#0ca30c;
+    --tint-lav:#333748; --tint-mint:#2c3d33; --tint-peach:#463527; --tint-sky:#2b3a4a; --tint-rose:#43303a; --tint-butter:#403a26;
+    --shadow:none;
   }
 }
 *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
@@ -41,12 +45,17 @@ h1,h2,h3{margin:0}
 .wrap{max-width:640px;margin:0 auto;padding:16px 16px 8px}
 header.app{padding-top:calc(10px + env(safe-area-inset-top))}
 header.app .brand{display:flex;align-items:baseline;gap:8px}
-header.app h1{font-size:22px;font-weight:800;letter-spacing:-.02em}
+header.app h1{font-size:24px;font-weight:800;letter-spacing:-.02em}
+header.app h1 span.leaf{font-size:20px;margin-right:2px}
 header.app .tag{font-size:12px;color:var(--muted)}
 .banner{background:var(--warn);color:#0b0b0b;font-size:13px;padding:8px 14px;border-radius:10px;margin:10px 0;font-weight:600;display:none}
 
 /* ---------- cards & tiles ---------- */
-.card{background:var(--surface);border:1px solid var(--ring);border-radius:16px;padding:16px;margin-bottom:12px}
+.card{background:var(--surface);border:1px solid var(--ring);border-radius:20px;padding:16px;margin-bottom:12px;box-shadow:var(--shadow)}
+.card.t-lav{background:var(--tint-lav);border-color:transparent}
+.card.t-mint{background:var(--tint-mint);border-color:transparent}
+.card.t-peach{background:var(--tint-peach);border-color:transparent}
+.card.t-sky{background:var(--tint-sky);border-color:transparent}
 .tile-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .tile .lbl{font-size:12px;color:var(--ink-2);font-weight:600;text-transform:uppercase;letter-spacing:.05em}
 .tile .val{font-size:34px;font-weight:800;line-height:1.15;margin-top:2px}
@@ -86,11 +95,14 @@ textarea{min-height:110px;resize:vertical;line-height:1.45}
   display:inline-flex;align-items:center;gap:6px;border:1px solid var(--ring)}
 .chip button{background:none;color:var(--ink-2);font-size:15px;padding:0 2px}
 .hint{font-size:12.5px;color:var(--muted);line-height:1.45;margin-top:6px}
+.factline{font-size:13px;color:var(--ink-2);padding:5px 8px;margin-top:5px;line-height:1.4;background:var(--tint-butter);border-radius:10px;display:flex;gap:6px;align-items:flex-start}
+.factline button{background:none;color:var(--muted);font-size:14px;padding:0 2px;margin-left:auto}
+.factline .fk{flex:none}
 
 /* ---------- people list ---------- */
 .person{display:flex;align-items:center;gap:12px;padding:12px 4px;border-bottom:1px solid var(--grid)}
 .person:last-child{border-bottom:none}
-.avatar{width:40px;height:40px;border-radius:50%;background:var(--accent-soft);color:var(--ink);
+.avatar{width:40px;height:40px;border-radius:50%;background:var(--accent-soft);color:#33302b;
   display:flex;align-items:center;justify-content:center;font-weight:800;font-size:15px;flex:none}
 .person .nm{font-weight:700;font-size:15.5px}
 .person .meta{font-size:12.5px;color:var(--muted);margin-top:1px}
@@ -124,13 +136,13 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
 
 <div class="wrap">
   <header class="app">
-    <div class="brand"><h1>Kith</h1><span class="tag">your connection portfolio</span></div>
+    <div class="brand"><h1><span class="leaf">🌱</span>Kith</h1><span class="tag">your connection garden</span></div>
     <div class="banner" id="previewBanner">Preview mode — data won’t be saved in this window. It saves permanently once hosted at your own web address.</div>
   </header>
 
   <!-- ============ HOME ============ -->
   <section class="page" id="page-home">
-    <div class="card tile" id="scoreTile">
+    <div class="card tile t-lav" id="scoreTile">
       <div class="lbl">Connection score</div>
       <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:10px">
         <div>
@@ -141,8 +153,8 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
       </div>
     </div>
     <div class="tile-row">
-      <div class="card tile"><div class="lbl">Initiation</div><div class="val" id="initVal">–</div><div class="sub">of interactions started by you (30d)</div></div>
-      <div class="card tile"><div class="lbl">Depth</div><div class="val" id="depthVal">–</div><div class="sub">substantive or deep (30d)</div></div>
+      <div class="card tile t-mint"><div class="lbl">Initiation</div><div class="val" id="initVal">–</div><div class="sub">of interactions started by you (30d)</div></div>
+      <div class="card tile t-peach"><div class="lbl">Depth</div><div class="val" id="depthVal">–</div><div class="sub">substantive or deep (30d)</div></div>
     </div>
     <div class="card">
       <div class="lbl" style="font-size:12px;color:var(--ink-2);font-weight:600;text-transform:uppercase;letter-spacing:.05em">Depth mix — last 30 days</div>
@@ -191,6 +203,11 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
         <input type="text" id="newPersonName" placeholder="Add a person…">
         <button class="btn small" id="newPersonBtn">Add</button>
       </div>
+      <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+        <button class="btn ghost small" id="pickContacts" style="display:none">📇 Pick from Contacts</button>
+        <button class="btn ghost small" id="vcfBtn2">Import contacts file (.vcf)</button>
+      </div>
+      <p class="hint" id="contactsHint">Imported names land in Suggest → Triage, where you file each into a circle.</p>
     </div>
     <div id="peopleList"></div>
   </section>
@@ -408,7 +425,9 @@ Each object:
  "depth":1|2|3|4,  // 1=transactional/logistics/admin; 2=social/light catch-up/banter; 3=substantive (real topics, advice, work or life discussed properly); 4=deep (vulnerability, emotions, meaning, hard truths)
  "channel":"inperson"|"video"|"call"|"message",
  "date":"YYYY-MM-DD",  // resolve 'yesterday', 'last night', 'this morning', weekday names, relative to today's date given
- "summary":"<12 words capturing the interaction"}
+ "summary":"<12 words capturing the interaction",
+ "facts":[{"person":"Name","fact":"short durable fact worth remembering before next contacting them","kind":"family"|"likes"|"plans"|"work"|"other"}]}
+Facts are the CRM layer: capture children's/partner's names, likes and dislikes, plans and upcoming events, job changes, things they're worried about or celebrating. Write each fact so it stands alone ("daughter Iris starting secondary school in September"). Only durable, useful facts — no trivia, no restating the interaction itself. Empty array if none.
 Judge depth by substance, not length. Group chat/likes count as "message". If genuinely no interaction is described, return [].`;
 async function aiParse(text){
   const people=DB.people.map(p=>p.name+((p.aliases||[]).length?` (aka ${p.aliases.join(", ")})`:"")).join("; ")||"(none yet)";
@@ -428,7 +447,10 @@ async function aiParse(text){
     for(const n of (o.new_people||[])) if(!pendingNames.includes(String(n))) pendingNames.push(String(n));
     let ts=Date.now();
     if(o.date && /^\d{4}-\d{2}-\d{2}$/.test(o.date)){ const t=new Date(o.date+"T12:00").getTime(); if(t && t<=Date.now()+DAY) ts=t; }
-    return {id:uid(), ai:true, note:o.summary||text.slice(0,120), personIds, pendingNames,
+    const facts=(o.facts||[]).map(f=>({person:String(f.person||"").slice(0,60),
+      fact:String(f.fact||"").slice(0,200),
+      kind:KIND_EMOJI[f.kind]?f.kind:"other"})).filter(f=>f.person&&f.fact);
+    return {id:uid(), ai:true, note:o.summary||text.slice(0,120), personIds, pendingNames, facts,
       initiator:INITS[o.initiator]?o.initiator:"mutual",
       depth:Math.min(4,Math.max(1,+o.depth||2)),
       channel:CHANNELS[o.channel]?o.channel:"inperson", ts};
@@ -454,7 +476,7 @@ function sparkline(el, series){
   el.innerHTML=`<svg viewBox="0 0 ${W} ${H}" width="100%" style="touch-action:none">
     <line x1="${P}" y1="${H-P}" x2="${W-P}" y2="${H-P}" stroke="var(--baseline)" stroke-width="1"/>
     <polyline points="${pts}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
-    <circle cx="${x(series.length-1)}" cy="${y(last.v)}" r="3.5" fill="var(--accent)" stroke="var(--surface)" stroke-width="2"/>
+    <circle cx="${x(series.length-1)}" cy="${y(last.v)}" r="3.5" fill="var(--accent)" stroke="var(--tint-lav)" stroke-width="2"/>
     <text x="${W-P}" y="10" text-anchor="end" font-size="10" fill="var(--muted)">8 wks</text>
   </svg>`;
   const svg=el.querySelector("svg");
@@ -507,6 +529,10 @@ function depthMixBar(el, legendEl){
 
 /* ---------- rendering ---------- */
 function initials(name){ return name.split(/\s+/).slice(0,2).map(w=>w[0]||"").join("").toUpperCase(); }
+const AV_COLORS=["#cfe0f7","#f9ddc9","#d5eedd","#f3d9e5","#e6e0f7","#f7ecc8"];
+function avColor(name){ let h=0; for(const c of String(name)) h=(h*31+c.charCodeAt(0))>>>0; return AV_COLORS[h%AV_COLORS.length]; }
+function av(name){ return `<div class="avatar" style="background:${avColor(name)}">${esc(initials(name))}</div>`; }
+const KIND_EMOJI={family:"👨‍👩‍👧",likes:"❤️",plans:"📅",work:"💼",other:"📝"};
 function fmtAgo(ts){
   if(!ts) return "never";
   const d=Math.floor((Date.now()-ts)/DAY);
@@ -542,7 +568,7 @@ function renderHome(){
   const xs=[...DB.interactions].sort((a,b)=>b.ts-a.ts).slice(0,6);
   rec.innerHTML=xs.length?xs.map(x=>{
     const names=x.personIds.map(id=>DB.people.find(p=>p.id===id)?.name||"?").join(", ");
-    return `<div class="person"><div class="avatar">${esc(initials(names))}</div>
+    return `<div class="person">${av(names)}
       <div><div class="nm">${esc(names||"(no one tagged)")}</div>
       <div class="meta">${DEPTHS[x.depth-1].label} · ${CHANNELS[x.channel].label} · ${INITS[x.initiator].label} · ${fmtAgo(x.ts)}</div></div>
       <div class="spacer"></div><span class="badge">+${Math.round(interactionPoints(x))}</span></div>`;
@@ -567,12 +593,13 @@ function suggCard(u, compact){
   const b=personBalance(u.p,Date.now()), h=healthOf(b);
   return `<div class="sugg" data-pid="${u.p.id}">
     <div style="display:flex;align-items:center;gap:10px">
-      <div class="avatar">${esc(initials(u.p.name))}</div>
+      ${av(u.p.name)}
       <div><div class="nm" style="font-weight:700">${esc(u.p.name)}</div>
       <span class="status" style="color:${h.color}"><i style="background:${h.color}"></i>${h.label}</span></div>
       <div class="spacer"></div><span class="badge">${t.label}</span>
     </div>
     <div class="why">Last contact <b>${u.last?fmtAgo(u.last):"never logged"}</b>${t.cadence?` — your rhythm for this circle is every ${t.cadence} days`:""}.</div>
+    ${(u.p.facts&&u.p.facts.length)?`<div class="why">💡 ${u.p.facts.slice(-2).map(f=>esc(f.f)).join(" · ")}</div>`:""}
     <div class="row">
       <button class="btn small" data-act="log">I reached out</button>
       <button class="btn ghost small" data-act="snooze">Snooze 1w</button>
@@ -602,7 +629,7 @@ function renderSuggest(){
   tl.innerHTML=DB.candidates.length?DB.candidates.slice(0,8).map(c=>`
     <div class="card" data-cand="${esc(c)}" style="padding:12px 14px">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
-        <div class="avatar">${esc(initials(c))}</div><div class="nm" style="font-weight:700">${esc(c)}</div></div>
+        ${av(c)}<div class="nm" style="font-weight:700">${esc(c)}</div></div>
       <div class="seg">
         ${Object.entries(TIERS).map(([k,t])=>`<button data-tier="${k}">${t.label}</button>`).join("")}
         <button data-tier="skip">✕ Skip</button>
@@ -628,7 +655,7 @@ function renderPeople(){
     html+=ppl.map(p=>{
       const b=personBalance(p,Date.now()), h=healthOf(b), last=lastContact(p,Date.now());
       return `<div class="person" data-pid="${p.id}">
-        <div class="avatar">${esc(initials(p.name))}</div>
+        ${av(p.name)}
         <div><div class="nm">${esc(p.name)}</div><div class="meta">last: ${fmtAgo(last)}</div></div>
         <div class="spacer"></div>
         ${k!=="notnow"?`<span class="status" style="color:${h.color}"><i style="background:${h.color}"></i>${h.label}</span>`:""}
@@ -645,7 +672,14 @@ function personSheet(pid){
   const dlg=document.createElement("dialog");
   dlg.innerHTML=`<h2 style="font-size:18px;margin-bottom:4px">${esc(p.name)}</h2>
     <div class="fld"><label>Circle</label><div class="seg">${Object.entries(TIERS).map(([k,t])=>`<button data-tier="${k}" class="${p.tier===k?"on":""}">${t.label}</button>`).join("")}</div></div>
-    <div class="sect" style="margin-top:8px">History</div>
+    <div class="sect" style="margin-top:8px">Worth remembering</div>
+    <div id="factList">${(p.facts&&p.facts.length)?[...p.facts].reverse().map((f,i)=>
+      `<div class="factline"><span class="fk">${KIND_EMOJI[f.kind]||"📝"}</span><span>${esc(f.f)}</span><button data-fdel="${p.facts.length-1-i}">✕</button></div>`).join("")
+      :`<div class="empty" style="padding:8px">Nothing yet — mention things in your notes (kids, plans, likes) and Claude files them here.</div>`}</div>
+    <div style="display:flex;gap:8px;margin-top:8px">
+      <input type="text" id="factAdd" placeholder="Add something to remember…">
+      <button class="btn small" id="factAddBtn">Add</button></div>
+    <div class="sect" style="margin-top:12px">History</div>
     ${xs.length?xs.slice(0,20).map(x=>`<div class="person"><div><div class="nm" style="font-size:14px">${DEPTHS[x.depth-1].label} · ${CHANNELS[x.channel].label}</div>
       <div class="meta">${INITS[x.initiator].label} · ${fmtAgo(x.ts)}${x.note?` — ${esc(x.note.slice(0,90))}`:""}</div></div></div>`).join("")
       :`<div class="empty">No interactions logged yet.</div>`}
@@ -654,6 +688,14 @@ function personSheet(pid){
       <button class="btn danger small" id="dlgDel">Remove person</button></div>`;
   document.body.appendChild(dlg); dlg.showModal();
   dlg.querySelectorAll("[data-tier]").forEach(b=>b.addEventListener("click",()=>{ p.tier=b.dataset.tier; saveDB(); dlg.close(); dlg.remove(); renderAll(); }));
+  dlg.querySelectorAll("[data-fdel]").forEach(b=>b.addEventListener("click",()=>{
+    p.facts.splice(+b.dataset.fdel,1); saveDB(); dlg.close(); dlg.remove(); personSheet(pid);
+  }));
+  dlg.querySelector("#factAddBtn").addEventListener("click",()=>{
+    const v=dlg.querySelector("#factAdd").value.trim(); if(!v) return;
+    p.facts=p.facts||[]; p.facts.push({f:v,kind:"other",ts:Date.now()});
+    saveDB(); dlg.close(); dlg.remove(); personSheet(pid);
+  });
   dlg.querySelector("#dlgClose").addEventListener("click",()=>{ dlg.close(); dlg.remove(); });
   dlg.querySelector("#dlgDel").addEventListener("click",()=>{ if(confirm(`Remove ${p.name}? Their logged interactions stay but untagged.`)){ DB.people=DB.people.filter(x=>x.id!==pid); saveDB(); dlg.close(); dlg.remove(); renderAll(); }});
 }
@@ -684,6 +726,8 @@ function renderDrafts(){
         ${DEPTHS.map(v=>`<button data-v="${v.n}" class="${d.depth===v.n?"on":""}">${v.label}</button>`).join("")}</div></div>
       <div class="fld"><label>Channel</label><div class="seg" data-set="channel" data-di="${di}">
         ${Object.entries(CHANNELS).map(([k,v])=>`<button data-v="${k}" class="${d.channel===k?"on":""}">${v.label}</button>`).join("")}</div></div>
+      ${(d.facts&&d.facts.length)?`<div class="fld"><label>Will remember</label>${d.facts.map((f,fi)=>
+        `<div class="factline"><span class="fk">${KIND_EMOJI[f.kind]}</span><span><b>${esc(f.person)}</b> — ${esc(f.fact)}</span><button data-di="${di}" data-frm="${fi}">✕</button></div>`).join("")}</div>`:""}
       <div class="fld"><label>When</label><input type="date" data-date="${di}" value="${new Date(d.ts).toISOString().slice(0,10)}"></div>
       <div style="display:flex;gap:8px">
         <button class="btn" data-save="${di}">Save · +${Math.round(interactionPoints(d))} pts</button>
@@ -700,6 +744,9 @@ function renderDrafts(){
   });
   el.querySelectorAll("[data-rm]").forEach(b=>b.addEventListener("click",()=>{
     const d=drafts[+b.dataset.di]; d.personIds=d.personIds.filter(id=>id!==b.dataset.rm); renderDrafts();
+  }));
+  el.querySelectorAll("[data-frm]").forEach(b=>b.addEventListener("click",()=>{
+    const d=drafts[+b.dataset.di]; d.facts.splice(+b.dataset.frm,1); renderDrafts();
   }));
   el.querySelectorAll("[data-pend]").forEach(ch=>ch.addEventListener("click",()=>{
     const d=drafts[+ch.dataset.di]; const name=ch.dataset.pend;
@@ -726,6 +773,14 @@ function renderDrafts(){
     if((d.pendingNames||[]).length){ alert("Tap the highlighted name(s) to file them into a circle first."); return; }
     if(!d.personIds.length){ alert("Tag at least one person (type a name and press return)."); return; }
     DB.interactions.push({id:uid(),ts:d.ts,personIds:d.personIds,initiator:d.initiator,depth:d.depth,channel:d.channel,note:d.note});
+    // attach remembered facts to their people
+    for(const f of (d.facts||[])){
+      const p=DB.people.find(x=>x.name.toLowerCase()===f.person.toLowerCase()
+        || nameTokens(x.name)[0]===f.person.toLowerCase()
+        || (x.aliases||[]).some(a=>a.toLowerCase()===f.person.toLowerCase()));
+      if(p){ p.facts=p.facts||[];
+        if(!p.facts.some(x=>x.f.toLowerCase()===f.fact.toLowerCase())) p.facts.push({f:f.fact,kind:f.kind,ts:d.ts}); }
+    }
     // clear snoozes for these people
     d.personIds.forEach(id=>{const p=DB.people.find(x=>x.id===id); if(p) delete p.snoozeUntil;});
     drafts.splice(+b.dataset.save,1);
@@ -784,23 +839,40 @@ document.getElementById("newPersonBtn").addEventListener("click",()=>{
   const inp=document.getElementById("newPersonName"); const name=inp.value.trim(); if(!name) return;
   askTier(name, tier=>{ DB.people.push({id:uid(),name,tier,aliases:[],added:Date.now()}); inp.value=""; saveDB(); renderAll(); });
 });
+function addCandidates(names){
+  const existing=new Set(DB.people.map(p=>p.name.toLowerCase()));
+  let added=0;
+  for(const raw of names){ const n=String(raw).trim();
+    if(n && !existing.has(n.toLowerCase()) && !DB.candidates.includes(n)){ DB.candidates.push(n); added++; } }
+  saveDB(); renderAll(); return added;
+}
 document.getElementById("candAdd").addEventListener("click",()=>{
   const ta=document.getElementById("candPaste");
-  const names=ta.value.split(/\n/).map(s=>s.trim()).filter(Boolean);
-  const existing=new Set(DB.people.map(p=>p.name.toLowerCase()));
-  for(const n of names) if(!existing.has(n.toLowerCase()) && !DB.candidates.includes(n)) DB.candidates.push(n);
-  ta.value=""; saveDB(); renderAll();
+  addCandidates(ta.value.split(/\n/)); ta.value="";
 });
 document.getElementById("vcfFile").addEventListener("change",e=>{
   const f=e.target.files[0]; if(!f) return;
   f.text().then(txt=>{
     const names=[...txt.matchAll(/^FN[^:]*:(.+)$/gm)].map(m=>m[1].trim()).filter(Boolean);
-    const existing=new Set(DB.people.map(p=>p.name.toLowerCase()));
-    let added=0;
-    for(const n of names) if(!existing.has(n.toLowerCase()) && !DB.candidates.includes(n)){ DB.candidates.push(n); added++; }
-    saveDB(); renderAll(); alert(`${added} contacts added to triage.`); switchPage("suggest");
+    const added=addCandidates(names);
+    alert(`${added} contacts added to triage.`); switchPage("suggest");
   });
 });
+document.getElementById("vcfBtn2").addEventListener("click",()=>document.getElementById("vcfFile").click());
+/* native contact picker where the browser supports it */
+if(navigator.contacts && navigator.contacts.select){
+  const b=document.getElementById("pickContacts"); b.style.display="inline-flex";
+  b.addEventListener("click",async ()=>{
+    try{
+      const cs=await navigator.contacts.select(["name"],{multiple:true});
+      const added=addCandidates(cs.map(c=>Array.isArray(c.name)?c.name[0]:c.name).filter(Boolean));
+      if(added){ alert(added+" added to triage."); switchPage("suggest"); }
+    }catch(e){ /* user cancelled */ }
+  });
+} else {
+  document.getElementById("contactsHint").innerHTML=
+    "This browser can’t open your Contacts app directly. Easiest route: in the iPhone <b>Contacts</b> app go to <b>Lists</b>, touch and hold <b>All Contacts</b>, tap <b>Export</b>, send the file to yourself, then use “Import contacts file” here. Or just paste names in Suggest → Triage.";
+}
 
 /* ---------- backup ---------- */
 document.getElementById("exportBtn").addEventListener("click",()=>{
