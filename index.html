@@ -119,8 +119,8 @@ textarea{min-height:110px;resize:vertical;line-height:1.45}
 /* ---------- tabs ---------- */
 nav.tabs{position:fixed;bottom:0;left:0;right:0;background:var(--surface);border-top:1px solid var(--ring);
   display:flex;justify-content:space-around;padding:8px 4px calc(8px + env(safe-area-inset-bottom));z-index:40}
-nav.tabs button{background:none;color:var(--muted);font-size:11px;font-weight:700;display:flex;flex-direction:column;
-  align-items:center;gap:3px;padding:4px 10px;border-radius:10px}
+nav.tabs button{background:none;color:var(--muted);font-size:10px;font-weight:700;display:flex;flex-direction:column;
+  align-items:center;gap:3px;padding:4px 5px;border-radius:10px}
 nav.tabs button svg{width:22px;height:22px}
 nav.tabs button.on{color:var(--accent)}
 .page{display:none}.page.on{display:block}
@@ -219,6 +219,29 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
     <div id="peopleList"></div>
   </section>
 
+  <!-- ============ NETWORK ============ -->
+  <section class="page" id="page-network">
+    <div class="card">
+      <div class="lbl" style="font-size:12px;color:var(--ink-2);font-weight:600;text-transform:uppercase;letter-spacing:.05em">Your constellation</div>
+      <div id="netGraph" style="margin-top:8px"></div>
+      <p class="hint">People link up when you log them together. Thicker lines = together more often; colour = relationship health. Tap a face for their profile.</p>
+    </div>
+    <div class="sect">Groups that build themselves</div>
+    <div id="netGroups"></div>
+    <div class="sect">Bridges</div>
+    <div id="netBridges"></div>
+    <div class="sect">Places</div>
+    <div class="card">
+      <div style="display:flex;gap:8px">
+        <input type="search" id="placeQ" placeholder="Search a town or postcode…">
+        <button class="btn small" id="nearMeBtn" style="white-space:nowrap">Near me</button>
+      </div>
+      <div id="placeResults"></div>
+    </div>
+    <div id="placeClusters"></div>
+    <div class="card" id="venueList"></div>
+  </section>
+
   <!-- ============ SETTINGS ============ -->
   <section class="page" id="page-settings">
     <div class="card">
@@ -248,6 +271,12 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
       <div class="hint" id="apiStatus"></div>
     </div>
     <div class="card">
+      <h2 style="font-size:17px">Places</h2>
+      <p class="hint">Contacts imported with an address can be placed on the map, powering “near me” and place search on the Network tab. Lookups go to OpenStreetMap (one per second, each address only once, cached on your phone).</p>
+      <button class="btn secondary" id="geoAllBtn" style="margin-top:10px">Put contacts on the map</button>
+      <div class="hint" id="geoProg"></div>
+    </div>
+    <div class="card">
       <h2 style="font-size:17px">How scoring works</h2>
       <p class="hint">Each interaction earns points: <b>channel</b> (in-person 10 · video 6 · call 5 · message 2) × <b>depth</b> (transactional ×1 · social ×2 · substantive ×4 · deep ×8) × <b>initiation</b> (you ×1.5 · mutual ×1.2 · them ×1). Every person’s balance then <b>decays daily</b> — faster for closer circles — so the score genuinely goes backwards when you go quiet. The headline score blends circle coverage (50%), depth mix (20%), initiation (15%) and volume (15%).</p>
     </div>
@@ -262,6 +291,7 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
   <button data-p="log"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0014 0M12 18v3"/></svg>Log</button>
   <button data-p="suggest"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v3M5.6 5.6l2.1 2.1M3 12h3M18 12h3M16.3 7.7l2.1-2.1"/><circle cx="12" cy="14" r="4"/><path d="M10 21h4"/></svg>Suggest</button>
   <button data-p="people"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.5 3.4-5.5 6.5-5.5s5.7 2 6.5 5.5"/><circle cx="17.5" cy="9" r="2.5"/><path d="M16 14.7c2.6.3 4.6 2 5.3 4.8"/></svg>People</button>
+  <button data-p="network"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="5" cy="6" r="2.5"/><circle cx="19" cy="6" r="2.5"/><circle cx="12" cy="18" r="2.5"/><path d="M7 7.5l3.5 8M17 7.5l-3.5 8M7.5 6h9"/></svg>Network</button>
   <button data-p="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 00-.1-1.2l2-1.5-2-3.4-2.3 1a7 7 0 00-2-1.2L14.2 3h-4l-.4 2.5a7 7 0 00-2 1.2l-2.3-1-2 3.4 2 1.5A7 7 0 005 12c0 .4 0 .8.1 1.2l-2 1.5 2 3.4 2.3-1c.6.5 1.3.9 2 1.2l.4 2.5h4l.4-2.5a7 7 0 002-1.2l2.3 1 2-3.4-2-1.5c.1-.4.1-.8.1-1.2z"/></svg>Settings</button>
 </nav>
 
@@ -275,10 +305,15 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
 /* ---------- storage (with in-memory fallback for preview mode) ---------- */
 const KEY="kith-data-v1";
 let memStore=null;
+function migrate(db){
+  db.candidates=(db.candidates||[]).map(c=>typeof c==="string"?{name:c}:c);
+  db.geo=db.geo||{};
+  return db;
+}
 function loadDB(){
-  try{ const raw=localStorage.getItem(KEY); if(raw) return JSON.parse(raw); }
+  try{ const raw=localStorage.getItem(KEY); if(raw) return migrate(JSON.parse(raw)); }
   catch(e){ document.getElementById("previewBanner").style.display="block"; }
-  return memStore || { people:[], interactions:[], candidates:[], scoreHistory:[] };
+  return migrate(memStore || { people:[], interactions:[], candidates:[], scoreHistory:[] });
 }
 function saveDB(){
   try{ localStorage.setItem(KEY, JSON.stringify(DB)); }
@@ -306,8 +341,11 @@ const uid=()=>Math.random().toString(36).slice(2,10);
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 
 /* ---------- scoring engine ---------- */
+const GROUP_DISC=[1,.74,.59,.49,.43,.38];
+function groupDiscount(n){ if(n<=0) return 1; return n<=6? GROUP_DISC[n-1] : Math.max(.30, .38-.02*(n-6)); }
 function interactionPoints(x){
-  return (CHANNELS[x.channel]?.base||3) * (DEPTHS[x.depth-1]?.mult||2) * (INITS[x.initiator]?.mult||1);
+  const base=(CHANNELS[x.channel]?.base||3) * (DEPTHS[x.depth-1]?.mult||2) * (INITS[x.initiator]?.mult||1);
+  return base * groupDiscount((x.personIds||[]).length||1);
 }
 function personBalance(p, asOf){
   const t=TIERS[p.tier]||TIERS.warm; if(!t.halflife) return 0;
@@ -411,7 +449,7 @@ function parseNote(text){
   if(!groups.length) groups.push({text, people:findPeopleInText(text)});
   return groups.map(g=>{
     const guess=parseSegment(g.text);
-    return {id:uid(), note:g.text.trim(), personIds:g.people.map(p=>p.id), pendingNames:[], ...guess};
+    return {id:uid(), note:g.text.trim(), personIds:g.people.map(p=>p.id), pendingNames:[], place:"", ...guess};
   });
 }
 
@@ -440,12 +478,42 @@ Each object:
  "depth":1|2|3|4,  // 1=transactional/logistics/admin; 2=social/light catch-up/banter; 3=substantive (real topics, advice, work or life discussed properly); 4=deep (vulnerability, emotions, meaning, hard truths)
  "channel":"inperson"|"video"|"call"|"message",
  "date":"YYYY-MM-DD",  // resolve 'yesterday', 'last night', 'this morning', weekday names, relative to today's date given
+ "place":"place mentioned in the note (restaurant, area, town) or empty string",
  "summary":"<12 words capturing the interaction",
  "facts":[{"person":"Name","fact":"short durable fact worth remembering before next contacting them","kind":"family"|"likes"|"plans"|"work"|"date"|"other"}]}
 Facts are the CRM layer: capture children's/partner's names, likes and dislikes, plans and upcoming events, job changes, things they're worried about or celebrating. Write each fact so it stands alone ("daughter Iris starting secondary school in September"). Only durable, useful facts — no trivia, no restating the interaction itself. Empty array if none.
 ALWAYS capture birthdays, anniversaries and other recurring personal dates as kind "date", converting relative mentions into the actual calendar date using today's date: "it was her birthday yesterday" on 19 August → {"fact":"birthday 18 August","kind":"date"}. A birthday is never trivia.
 The note is usually dictated speech-to-text, so names are often mis-transcribed. If a name is phonetically or visually close to someone on the known-people list ("Sara"/"Serra"→Sarah, "Tomm"→Tom, "Jaymes"→James), treat it as that known person and return the known spelling in "people". Only put a name in "new_people" if it clearly is not a known person.
 Judge depth by substance, not length. Group chat/likes count as "message". If genuinely no interaction is described, return [].`;
+/* ---------- places & geocoding (OpenStreetMap Nominatim, no key, 1 req/sec, cached) ---------- */
+let geoQueue=Promise.resolve();
+function nominatim(url){
+  const run=()=>new Promise(res=>setTimeout(res,1100))
+    .then(()=>fetch(url,{headers:{"Accept":"application/json"}}))
+    .then(r=>r&&r.ok?r.json():null).catch(()=>null);
+  const p=geoQueue.then(run); geoQueue=p.catch(()=>{}); return p;
+}
+function shortPlace(dn){ return String(dn||"").split(",").map(s=>s.trim()).slice(0,2).join(", "); }
+async function geocode(addr){
+  const key=addr.trim().toLowerCase(); if(!key) return null;
+  if(key in DB.geo) return DB.geo[key];
+  const j=await nominatim("https://nominatim.openstreetmap.org/search?format=json&limit=1&q="+encodeURIComponent(addr));
+  const hit=(j&&j[0])?{lat:+j[0].lat,lon:+j[0].lon,label:shortPlace(j[0].display_name)}:null;
+  DB.geo[key]=hit; saveDB(); return hit;
+}
+async function reverseGeo(lat,lon){
+  const j=await nominatim(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=16`);
+  if(!j) return "";
+  const a=j.address||{};
+  return a.suburb||a.village||a.neighbourhood||a.town||a.city_district||a.city||String(j.display_name||"").split(",")[0]||"";
+}
+function getPosition(){ return new Promise(res=>{ if(!navigator.geolocation) return res(null);
+  navigator.geolocation.getCurrentPosition(p=>res({lat:p.coords.latitude,lon:p.coords.longitude}),()=>res(null),{timeout:6000,maximumAge:300000}); }); }
+function havKm(a,b){ const R=6371,t=x=>x*Math.PI/180;
+  const h=Math.sin(t(b.lat-a.lat)/2)**2+Math.cos(t(a.lat))*Math.cos(t(b.lat))*Math.sin(t(b.lon-a.lon)/2)**2;
+  return 2*R*Math.asin(Math.sqrt(h)); }
+function isToday(ts){ return new Date(ts).toDateString()===new Date().toDateString(); }
+
 function lev(a,b){
   const m=a.length,n=b.length; if(!m) return n; if(!n) return m;
   let prev=Array.from({length:n+1},(_,j)=>j);
@@ -491,6 +559,7 @@ async function aiParse(text){
       fact:String(f.fact||"").slice(0,200),
       kind:KIND_EMOJI[f.kind]?f.kind:"other"})).filter(f=>f.person&&f.fact);
     return {id:uid(), ai:true, note:o.summary||text.slice(0,120), personIds, pendingNames, facts,
+      place:String(o.place||"").slice(0,80),
       initiator:INITS[o.initiator]?o.initiator:"mutual",
       depth:Math.min(4,Math.max(1,+o.depth||2)),
       channel:CHANNELS[o.channel]?o.channel:"inperson", ts};
@@ -617,12 +686,22 @@ function editInteraction(id){
       ${DEPTHS.map(v=>`<button data-v="${v.n}" class="${x.depth===v.n?"on":""}">${v.label}</button>`).join("")}</div></div>
     <div class="fld"><label>Channel</label><div class="seg" data-eset="channel">
       ${Object.entries(CHANNELS).map(([k,v])=>`<button data-v="${k}" class="${x.channel===k?"on":""}">${v.label}</button>`).join("")}</div></div>
+    <div class="fld"><label>Where</label><div style="display:flex;gap:8px">
+      <input type="text" id="ewhere" value="${esc(x.place||"")}" placeholder="place (optional)">
+      <button class="btn ghost small" id="egps">📍</button></div></div>
     <div class="fld"><label>When</label><input type="date" id="edate" value="${new Date(x.ts).toISOString().slice(0,10)}"></div>
     <div style="display:flex;gap:8px">
       <button class="btn small" id="esave">Save changes</button>
       <button class="btn ghost small" id="ecancel">Cancel</button></div>`;
   document.body.appendChild(dlg); dlg.showModal();
-  const draft={personIds:[...x.personIds],initiator:x.initiator,depth:x.depth,channel:x.channel,ts:x.ts};
+  const draft={personIds:[...x.personIds],initiator:x.initiator,depth:x.depth,channel:x.channel,ts:x.ts,place:x.place||"",loc:x.loc};
+  dlg.querySelector("#ewhere").addEventListener("input",e=>{ draft.place=e.target.value; });
+  dlg.querySelector("#egps").addEventListener("click",async ()=>{
+    const b=dlg.querySelector("#egps"); b.textContent="…";
+    const pos=await getPosition();
+    if(pos){ const pl=await reverseGeo(pos.lat,pos.lon); draft.place=pl; draft.loc=pos; dlg.querySelector("#ewhere").value=pl; }
+    b.textContent="📍";
+  });
   dlg.querySelectorAll(".seg[data-eset]").forEach(seg=>seg.querySelectorAll("button").forEach(b=>b.addEventListener("click",()=>{
     draft[seg.dataset.eset]=seg.dataset.eset==="depth"?+b.dataset.v:b.dataset.v;
     seg.querySelectorAll("button").forEach(q=>q.classList.toggle("on",q===b));
@@ -695,7 +774,7 @@ function renderHome(){
     const names=x.personIds.map(id=>DB.people.find(p=>p.id===id)?.name||"?").join(", ");
     return `<div class="person">${av(names)}
       <div><div class="nm">${esc(names||"(no one tagged)")}</div>
-      <div class="meta">${DEPTHS[x.depth-1].label} · ${CHANNELS[x.channel].label} · ${INITS[x.initiator].label} · ${fmtAgo(x.ts)}</div></div>
+      <div class="meta">${DEPTHS[x.depth-1].label} · ${CHANNELS[x.channel].label} · ${INITS[x.initiator].label} · ${fmtAgo(x.ts)}${x.place?` · 📍 ${esc(x.place)}`:""}</div></div>
       <div class="spacer"></div><span class="badge">+${Math.round(interactionPoints(x))}</span><button class="xdel" data-edit="${x.id}">✎</button><button class="xdel" data-x="${x.id}">✕</button></div>`;
   }).join(""):`<div class="empty">Your logged interactions appear here.</div>`;
   rec.querySelectorAll("[data-edit]").forEach(b=>b.addEventListener("click",()=>editInteraction(b.dataset.edit)));
@@ -758,9 +837,9 @@ function renderSuggest(){
   bindSuggButtons(el);
   const tl=document.getElementById("triageList");
   tl.innerHTML=DB.candidates.length?DB.candidates.slice(0,8).map(c=>`
-    <div class="card" data-cand="${esc(c)}" style="padding:12px 14px">
+    <div class="card" data-cand="${esc(c.name)}" style="padding:12px 14px">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
-        ${av(c)}<div class="nm" style="font-weight:700">${esc(c)}</div></div>
+        ${av(c.name)}<div><div class="nm" style="font-weight:700">${esc(c.name)}</div>${c.addr?`<div class="meta">📍 ${esc(c.addr)}</div>`:""}</div></div>
       <div class="seg">
         ${Object.entries(TIERS).map(([k,t])=>`<button data-tier="${k}">${t.label}</button>`).join("")}
         <button data-tier="skip">✕ Skip</button>
@@ -769,8 +848,9 @@ function renderSuggest(){
   tl.querySelectorAll("[data-cand]").forEach(card=>{
     const name=card.dataset.cand;
     card.querySelectorAll("button").forEach(b=>b.addEventListener("click",()=>{
-      DB.candidates=DB.candidates.filter(c=>c!==name);
-      if(b.dataset.tier!=="skip") DB.people.push({id:uid(),name,tier:b.dataset.tier,aliases:[],added:Date.now()});
+      const cand=DB.candidates.find(c=>c.name===name);
+      DB.candidates=DB.candidates.filter(c=>c.name!==name);
+      if(b.dataset.tier!=="skip") DB.people.push({id:uid(),name,tier:b.dataset.tier,aliases:[],added:Date.now(),addr:cand?.addr});
       saveDB(); renderAll();
     }));
   });
@@ -812,7 +892,7 @@ function personSheet(pid){
       <button class="btn small" id="factAddBtn">Add</button></div>
     <div class="sect" style="margin-top:12px">History</div>
     ${xs.length?xs.slice(0,20).map(x=>`<div class="person"><div><div class="nm" style="font-size:14px">${DEPTHS[x.depth-1].label} · ${CHANNELS[x.channel].label}</div>
-      <div class="meta">${INITS[x.initiator].label} · ${fmtAgo(x.ts)}${x.note?` — ${esc(x.note.slice(0,90))}`:""}</div></div>
+      <div class="meta">${INITS[x.initiator].label} · ${fmtAgo(x.ts)}${x.place?` · 📍 ${esc(x.place)}`:""}${x.note?` — ${esc(x.note.slice(0,90))}`:""}</div></div>
       <div class="spacer"></div><button class="xdel" data-xedit="${x.id}">✎</button><button class="xdel" data-xdel="${x.id}">✕</button></div>`).join("")
       :`<div class="empty">No interactions logged yet.</div>`}
     <div style="display:flex;gap:8px;margin-top:12px">
@@ -869,9 +949,12 @@ function renderDrafts(){
         ${Object.entries(CHANNELS).map(([k,v])=>`<button data-v="${k}" class="${d.channel===k?"on":""}">${v.label}</button>`).join("")}</div></div>
       ${(d.facts&&d.facts.length)?`<div class="fld"><label>Will remember</label>${d.facts.map((f,fi)=>
         `<div class="factline"><span class="fk">${KIND_EMOJI[f.kind]}</span><span><b>${esc(f.person)}</b> — ${esc(f.fact)}</span><button data-di="${di}" data-frm="${fi}">✕</button></div>`).join("")}</div>`:""}
+      <div class="fld"><label>Where</label><div style="display:flex;gap:8px">
+        <input type="text" data-where="${di}" value="${esc(d.place||"")}" placeholder="place (optional)">
+        <button class="btn ghost small" data-gps="${di}" title="Use my location">📍</button></div></div>
       <div class="fld"><label>When</label><input type="date" data-date="${di}" value="${new Date(d.ts).toISOString().slice(0,10)}"></div>
       <div style="display:flex;gap:8px">
-        <button class="btn" data-save="${di}">Save · +${Math.round(interactionPoints(d))} pts</button>
+        <button class="btn" data-save="${di}">Save · +${Math.round(interactionPoints(d))} pts${d.personIds.length>1?" each":""}</button>
         <button class="btn ghost small" data-discard="${di}">Discard</button></div>
     </div>`;
   }).join("");
@@ -909,11 +992,22 @@ function renderDrafts(){
   el.querySelectorAll("[data-date]").forEach(inp=>inp.addEventListener("change",()=>{
     drafts[+inp.dataset.date].ts=new Date(inp.value+"T12:00").getTime();
   }));
+  el.querySelectorAll("[data-where]").forEach(inp=>inp.addEventListener("input",()=>{
+    drafts[+inp.dataset.where].place=inp.value;
+  }));
+  el.querySelectorAll("[data-gps]").forEach(b=>b.addEventListener("click",async ()=>{
+    b.textContent="…";
+    const pos=await getPosition();
+    if(pos){ const pl=await reverseGeo(pos.lat,pos.lon);
+      const d=drafts[+b.dataset.gps]; d.place=pl; d.loc=pos;
+      const inp=el.querySelector(`[data-where="${b.dataset.gps}"]`); if(inp) inp.value=pl; }
+    b.textContent="📍";
+  }));
   el.querySelectorAll("[data-save]").forEach(b=>b.addEventListener("click",()=>{
     const d=drafts[+b.dataset.save];
     if((d.pendingNames||[]).length){ alert("Tap the highlighted name(s) to file them into a circle first."); return; }
     if(!d.personIds.length){ alert("Tag at least one person (type a name and press return)."); return; }
-    DB.interactions.push({id:uid(),ts:d.ts,personIds:d.personIds,initiator:d.initiator,depth:d.depth,channel:d.channel,note:d.note});
+    DB.interactions.push({id:uid(),ts:d.ts,personIds:d.personIds,initiator:d.initiator,depth:d.depth,channel:d.channel,note:d.note,place:d.place||"",loc:d.loc});
     // attach remembered facts to their people
     for(const f of (d.facts||[])){
       const p=DB.people.find(x=>x.name.toLowerCase()===f.person.toLowerCase()
@@ -945,6 +1039,14 @@ document.getElementById("parseBtn").addEventListener("click",async ()=>{
   }
   renderDrafts();
   document.getElementById("drafts").scrollIntoView({behavior:"smooth"});
+  // GPS autofill: what the note says beats where you are; GPS only applies to entries dated today
+  if(drafts.some(d=>!d.place && isToday(d.ts))){
+    const pos=await getPosition();
+    if(pos){ const pl=await reverseGeo(pos.lat,pos.lon);
+      if(pl){ let changed=false;
+        drafts.forEach(d=>{ if(!d.place && isToday(d.ts)){ d.place=pl; d.loc=pos; changed=true; } });
+        if(changed) renderDrafts(); } }
+  }
 });
 /* API key save + live test */
 document.getElementById("apiKey").value=getApiKey();
@@ -980,11 +1082,15 @@ document.getElementById("newPersonBtn").addEventListener("click",()=>{
   const inp=document.getElementById("newPersonName"); const name=inp.value.trim(); if(!name) return;
   askTier(name, tier=>{ DB.people.push({id:uid(),name,tier,aliases:[],added:Date.now()}); inp.value=""; saveDB(); renderAll(); });
 });
-function addCandidates(names){
+function addCandidates(items){
   const existing=new Set(DB.people.map(p=>p.name.toLowerCase()));
+  const pending=new Set(DB.candidates.map(c=>c.name.toLowerCase()));
   let added=0;
-  for(const raw of names){ const n=String(raw).trim();
-    if(n && !existing.has(n.toLowerCase()) && !DB.candidates.includes(n)){ DB.candidates.push(n); added++; } }
+  for(const raw of items){
+    const it=typeof raw==="string"?{name:raw.trim()}:{name:String(raw.name||"").trim(),addr:raw.addr?String(raw.addr).trim():undefined};
+    if(it.name && !existing.has(it.name.toLowerCase()) && !pending.has(it.name.toLowerCase())){
+      DB.candidates.push(it); pending.add(it.name.toLowerCase()); added++; }
+  }
   saveDB(); renderAll(); return added;
 }
 document.getElementById("candAdd").addEventListener("click",()=>{
@@ -994,19 +1100,48 @@ document.getElementById("candAdd").addEventListener("click",()=>{
 document.getElementById("vcfFile").addEventListener("change",e=>{
   const f=e.target.files[0]; if(!f) return;
   f.text().then(txt=>{
-    const names=[...txt.matchAll(/^FN[^:]*:(.+)$/gm)].map(m=>m[1].trim()).filter(Boolean);
-    const added=addCandidates(names);
-    alert(`${added} contacts added to triage.`); switchPage("suggest");
+    const items=txt.split(/BEGIN:VCARD/i).slice(1).map(bk=>{
+      const fn=(bk.match(/^FN[^:]*:(.+)$/m)||[])[1]; if(!fn) return null;
+      const adrs=[...bk.matchAll(/^(?:item\d+\.)?ADR([^:]*):(.+)$/gm)];
+      const adr=adrs.find(m=>/HOME/i.test(m[1]))||adrs[0];
+      let addr;
+      if(adr){ const fld=adr[2].split(";").map(s=>s.replace(/\\,/g,",").trim());
+        addr=[fld[3],fld[5]].filter(Boolean).join(" ")||[fld[2],fld[4],fld[6]].filter(Boolean).join(", "); }
+      return {name:fn.trim(), addr:addr||undefined};
+    }).filter(Boolean);
+    const added=addCandidates(items);
+    alert(`${added} contacts added to triage${items.some(i=>i.addr)?" (addresses included)":""}.`); switchPage("suggest");
   });
 });
 document.getElementById("vcfBtn2").addEventListener("click",()=>document.getElementById("vcfFile").click());
+document.getElementById("geoAllBtn").addEventListener("click",async ()=>{
+  const todo=[...DB.people,...DB.candidates].filter(x=>x.addr && !x.loc);
+  const prog=document.getElementById("geoProg");
+  if(!todo.length){ prog.textContent="Nothing to map — no unmapped addresses. Import contacts with addresses first."; return; }
+  const btn=document.getElementById("geoAllBtn"); btn.disabled=true;
+  let done=0, found=0;
+  for(const x of todo){
+    prog.textContent=`Mapping ${done+1} of ${todo.length}… (${found} placed)`;
+    const loc=await geocode(x.addr);
+    if(loc){ x.loc={lat:loc.lat,lon:loc.lon}; found++; }
+    done++; saveDB();
+  }
+  prog.textContent=`Done — ${found} of ${todo.length} contacts placed on the map.`;
+  btn.disabled=false; renderAll();
+});
 /* native contact picker where the browser supports it */
 if(navigator.contacts && navigator.contacts.select){
   const b=document.getElementById("pickContacts"); b.style.display="inline-flex";
   b.addEventListener("click",async ()=>{
     try{
-      const cs=await navigator.contacts.select(["name"],{multiple:true});
-      const added=addCandidates(cs.map(c=>Array.isArray(c.name)?c.name[0]:c.name).filter(Boolean));
+      let props=["name"];
+      try{ const sup=await navigator.contacts.getProperties(); if(sup.includes("address")) props.push("address"); }catch(e){}
+      const cs=await navigator.contacts.select(props,{multiple:true});
+      const items=cs.map(c=>{ const name=Array.isArray(c.name)?c.name[0]:c.name;
+        const a=(c.address&&c.address[0])||null;
+        const addr=a?[a.city,a.postalCode].filter(Boolean).join(" "):undefined;
+        return name?{name,addr}:null; }).filter(Boolean);
+      const added=addCandidates(items);
       if(added){ alert(added+" added to triage."); switchPage("suggest"); }
     }catch(e){ /* user cancelled */ }
   });
@@ -1032,6 +1167,177 @@ document.getElementById("wipeBtn").addEventListener("click",()=>{
   { DB={people:[],interactions:[],candidates:[],scoreHistory:[]}; saveDB(); renderAll(); }
 });
 
+/* ---------- network: co-presence graph, groups, bridges, places ---------- */
+function pairKey(a,b){ return a<b?a+"|"+b:b+"|"+a; }
+function coData(){
+  const pairs=new Map(), pplSet=new Set();
+  for(const x of DB.interactions){
+    const ids=(x.personIds||[]).filter(id=>DB.people.some(p=>p.id===id));
+    if(ids.length<2) continue;
+    ids.forEach(id=>pplSet.add(id));
+    for(let i=0;i<ids.length;i++) for(let j=i+1;j<ids.length;j++){
+      const k=pairKey(ids[i],ids[j]);
+      const e=pairs.get(k)||{count:0,last:0,first:Infinity};
+      e.count++; e.last=Math.max(e.last,x.ts); e.first=Math.min(e.first,x.ts);
+      pairs.set(k,e);
+    }
+  }
+  return {pairs, nodes:[...pplSet]};
+}
+function findGroups(nodes,pairs){
+  // dense-set detection: someone joins only if linked to most of the set,
+  // so one person can genuinely belong to two groups without merging them
+  const adj=new Map();
+  for(const k of pairs.keys()){ const [a,b]=k.split("|");
+    if(!adj.has(a)) adj.set(a,new Set()); if(!adj.has(b)) adj.set(b,new Set());
+    adj.get(a).add(b); adj.get(b).add(a); }
+  const edges=[...pairs.entries()].sort((x,y)=>y[1].count-x[1].count);
+  const groups=[];
+  for(const [k] of edges){
+    const [a,b]=k.split("|");
+    if(groups.some(g=>g.has(a)&&g.has(b))) continue;
+    const g=new Set([a,b]);
+    let grew=true;
+    while(grew){ grew=false;
+      for(const n of nodes){ if(g.has(n)) continue;
+        const links=[...g].filter(m=>adj.get(n)&&adj.get(n).has(m)).length;
+        if(links>=Math.max(1,Math.ceil(g.size*0.6))){ g.add(n); grew=true; } } }
+    if(!groups.some(o=>[...g].every(m=>o.has(m)))){
+      for(let i=groups.length-1;i>=0;i--) if([...groups[i]].every(m=>g.has(m))) groups.splice(i,1);
+      groups.push(g);
+    }
+  }
+  return groups;
+}
+function layoutGraph(nodes,pairs,W,H){
+  const pos={};
+  nodes.forEach((id,i)=>{ const a=2*Math.PI*i/nodes.length;
+    pos[id]={x:W/2+Math.cos(a)*W*0.33, y:H/2+Math.sin(a)*H*0.33}; });
+  for(let it=0;it<150;it++){
+    for(let i=0;i<nodes.length;i++) for(let j=i+1;j<nodes.length;j++){
+      const pa=pos[nodes[i]],pb=pos[nodes[j]];
+      let dx=pb.x-pa.x,dy=pb.y-pa.y; const d2=dx*dx+dy*dy||1; const f=1400/d2;
+      pa.x-=dx*f/40; pa.y-=dy*f/40; pb.x+=dx*f/40; pb.y+=dy*f/40; }
+    for(const [k,e] of pairs){ const [a,b]=k.split("|"); const pa=pos[a],pb=pos[b];
+      const f=0.003*Math.min(4,e.count);
+      const dx=pb.x-pa.x,dy=pb.y-pa.y;
+      pa.x+=dx*f; pa.y+=dy*f; pb.x-=dx*f; pb.y-=dy*f; }
+    for(const id of nodes){ const p=pos[id]; p.x=Math.max(30,Math.min(W-30,p.x)); p.y=Math.max(24,Math.min(H-26,p.y)); }
+  }
+  return pos;
+}
+function capName(p){ const n=nameTokens(p.name)[0]||""; return n.charAt(0).toUpperCase()+n.slice(1); }
+function groupMeetCount(g){
+  return DB.interactions.filter(x=>{
+    const ids=(x.personIds||[]).filter(id=>g.has(id)); return ids.length>=2; }).length;
+}
+function renderNetwork(){
+  const {pairs,nodes}=coData();
+  const gEl=document.getElementById("netGraph");
+  if(nodes.length<2){
+    gEl.innerHTML=`<div class="empty">Your constellation appears once you log interactions with more than one person tagged — dinners, group calls, family lunches.</div>`;
+    document.getElementById("netGroups").innerHTML=`<div class="card empty">Groups build themselves from who you see together.</div>`;
+    document.getElementById("netBridges").innerHTML=`<div class="card empty">Bridges — people who belong to more than one of your groups — appear here.</div>`;
+  } else {
+    const W=360,H=290, pos=layoutGraph(nodes,pairs,W,H);
+    const pplById=id=>DB.people.find(p=>p.id===id);
+    let svg=`<svg viewBox="0 0 ${W} ${H}" width="100%">`;
+    for(const [k,e] of pairs){ const [a,b]=k.split("|");
+      svg+=`<line x1="${pos[a].x}" y1="${pos[a].y}" x2="${pos[b].x}" y2="${pos[b].y}"
+        stroke="var(--baseline)" stroke-width="${(1+1.6*Math.log2(e.count+1)).toFixed(1)}" stroke-linecap="round" opacity="0.8"/>`; }
+    for(const id of nodes){ const p=pplById(id); if(!p) continue;
+      const h=healthOf(personBalance(p,Date.now()));
+      svg+=`<g class="netnode" data-pid="${id}" style="cursor:pointer">
+        <circle cx="${pos[id].x}" cy="${pos[id].y}" r="11" fill="${h.color}" stroke="var(--surface)" stroke-width="2"/>
+        <text x="${pos[id].x}" y="${pos[id].y+23}" text-anchor="middle" font-size="10" font-weight="600" fill="var(--ink-2)">${esc(nameTokens(p.name)[0][0].toUpperCase()+nameTokens(p.name)[0].slice(1))}</text></g>`; }
+    svg+=`</svg>`;
+    gEl.innerHTML=svg;
+    gEl.querySelectorAll(".netnode").forEach(n=>n.addEventListener("click",()=>personSheet(n.dataset.pid)));
+
+    // groups
+    const groups=findGroups(nodes,pairs);
+    const now=Date.now();
+    document.getElementById("netGroups").innerHTML=groups.length?groups.map((g,gi)=>{
+      const members=[...g].map(id=>DB.people.find(p=>p.id===id)).filter(Boolean)
+        .sort((a,b)=>personBalance(b,now)-personBalance(a,now));
+      const title=members.length>2?`${capName(members[0])} & ${capName(members[1])} + ${members.length-2} more`
+        :members.map(capName).join(" & ");
+      const meets=groupMeetCount(g);
+      const groupLast=Math.max(...[...pairs.entries()].filter(([k])=>{const[a,b]=k.split("|");return g.has(a)&&g.has(b);}).map(([,e])=>e.last));
+      const flags=members.map(m=>{
+        const mine=[...pairs.entries()].filter(([k])=>{const[a,b]=k.split("|");return (a===m.id&&g.has(b))||(b===m.id&&g.has(a));});
+        if(!mine.length) return "";
+        const first=Math.min(...mine.map(([,e])=>e.first)), last=Math.max(...mine.map(([,e])=>e.last));
+        if((now-first)/DAY<=30 && meets>2) return `<div class="why">✨ ${esc(capName(m))} is newly around this group</div>`;
+        if((now-last)/DAY>60 && (now-groupLast)/DAY<30) return `<div class="why">🍂 ${esc(capName(m))} has stopped showing up</div>`;
+        return "";
+      }).filter(Boolean).join("");
+      return `<div class="card"><div class="nm" style="font-weight:800">${esc(title)}’s circle</div>
+        <div class="meta" style="margin:2px 0 8px">together ${meets} time${meets===1?"":"s"} · last ${fmtAgo(groupLast)}</div>
+        <div class="chips">${members.map(m=>{const h=healthOf(personBalance(m,now));
+          return `<span class="chip"><i style="width:8px;height:8px;border-radius:50%;background:${h.color};display:inline-block"></i>${esc(capName(m))}</span>`;}).join("")}</div>
+        ${flags}</div>`;
+    }).join(""):`<div class="card empty">No recurring groups detected yet.</div>`;
+
+    // bridges & orphans
+    const memberOf={};
+    groups.forEach((g,i)=>[...g].forEach(id=>{ (memberOf[id]=memberOf[id]||[]).push(i); }));
+    const bridges=Object.entries(memberOf).filter(([,gs])=>gs.length>=2);
+    const orphans=DB.people.filter(p=>p.tier!=="notnow"&&!nodes.includes(p.id));
+    document.getElementById("netBridges").innerHTML=
+      (bridges.length?`<div class="card">${bridges.map(([id,gs])=>{
+        const p=DB.people.find(q=>q.id===id); if(!p) return "";
+        return `<div class="why">🌉 <b>${esc(p.name)}</b> bridges ${gs.length} of your groups — they connect worlds that otherwise wouldn’t meet.</div>`;}).join("")}</div>`
+      :`<div class="card empty">No bridges yet — a bridge is someone who belongs to two of your groups.</div>`)
+      +(orphans.length?`<p class="hint">Not yet linked to anyone: ${orphans.slice(0,8).map(p=>esc(capName(p))).join(", ")}${orphans.length>8?` +${orphans.length-8}`:""}.</p>`:"");
+  }
+
+  // place clusters & venues
+  const clusters={};
+  for(const p of DB.people){ if(!p.addr||p.tier==="notnow") continue;
+    const key=(p.addr.replace(/[0-9].*$/,"").trim()||p.addr).toLowerCase();
+    (clusters[key]=clusters[key]||{label:p.addr.replace(/[0-9].*$/,"").trim()||p.addr,ppl:[]}).ppl.push(p); }
+  const cEl=document.getElementById("placeClusters");
+  const cRows=Object.values(clusters).filter(c=>c.ppl.length>=1).sort((a,b)=>b.ppl.length-a.ppl.length).slice(0,8);
+  cEl.innerHTML=cRows.length?`<div class="card">${cRows.map(c=>{
+    const overdue=c.ppl.filter(p=>{const t=TIERS[p.tier];const l=lastContact(p,Date.now());
+      return t.cadence&&(!l||(Date.now()-l)/DAY>t.cadence);}).length;
+    return `<div class="why">📍 <b>${esc(c.label)}</b> — ${c.ppl.length} ${c.ppl.length===1?"person":"people"}${overdue?`, <b>${overdue} overdue</b>`:""}</div>`;}).join("")}</div>`:"";
+  const venues={};
+  for(const x of DB.interactions){ if(x.place) venues[x.place]=(venues[x.place]||0)+1; }
+  const vRows=Object.entries(venues).sort((a,b)=>b[1]-a[1]).slice(0,6);
+  document.getElementById("venueList").innerHTML=vRows.length?
+    `<div class="lbl" style="font-size:12px;color:var(--ink-2);font-weight:600;text-transform:uppercase;letter-spacing:.05em">Where you actually see people</div>
+     ${vRows.map(([pl,n])=>`<div class="why" style="margin-top:6px">${esc(pl)} · ×${n}</div>`).join("")}`
+    :`<div class="empty" style="padding:8px">Places you log interactions at will collect here.</div>`;
+}
+function renderPlaceResults(list,withDist){
+  const el=document.getElementById("placeResults");
+  el.innerHTML=list.length?list.slice(0,10).map(r=>{
+    const l=lastContact(r.p,Date.now());
+    return `<div class="person" data-pid="${r.p.id}">${av(r.p.name)}
+      <div><div class="nm">${esc(r.p.name)}</div>
+      <div class="meta">${r.p.addr?`📍 ${esc(r.p.addr)} · `:""}last: ${fmtAgo(l)}${withDist&&r.km!=null?` · ${r.km<1?"<1":Math.round(r.km)} km away`:""}</div></div></div>`;
+  }).join(""):`<div class="empty" style="padding:10px">No one found there.</div>`;
+  el.querySelectorAll(".person").forEach(row=>row.addEventListener("click",()=>personSheet(row.dataset.pid)));
+}
+document.getElementById("placeQ").addEventListener("input",e=>{
+  const q=e.target.value.trim().toLowerCase();
+  if(!q){ document.getElementById("placeResults").innerHTML=""; return; }
+  const list=DB.people.filter(p=>p.tier!=="notnow"&&p.addr&&p.addr.toLowerCase().includes(q))
+    .map(p=>({p})).sort((a,b)=>(lastContact(a.p,Date.now())||0)-(lastContact(b.p,Date.now())||0));
+  renderPlaceResults(list,false);
+});
+document.getElementById("nearMeBtn").addEventListener("click",async ()=>{
+  const btn=document.getElementById("nearMeBtn"); btn.textContent="…";
+  const pos=await getPosition(); btn.textContent="Near me";
+  if(!pos){ alert("Couldn't get your location — check Safari's location permission."); return; }
+  const list=DB.people.filter(p=>p.tier!=="notnow"&&p.loc)
+    .map(p=>({p,km:havKm(pos,p.loc)})).filter(r=>r.km<=40).sort((a,b)=>a.km-b.km);
+  if(!list.length){ document.getElementById("placeResults").innerHTML=`<div class="empty" style="padding:10px">No mapped contacts within 40 km — run “Put contacts on the map” in Settings first.</div>`; return; }
+  renderPlaceResults(list,true);
+});
+
 /* ---------- theme ---------- */
 const TH_KEY="kith-theme";
 function getTheme(){ try{ return localStorage.getItem(TH_KEY)||"light"; }catch(e){ return window.__memTheme||"light"; } }
@@ -1055,7 +1361,7 @@ function switchPage(p){
   renderAll();
 }
 document.querySelectorAll("nav.tabs button").forEach(b=>b.addEventListener("click",()=>switchPage(b.dataset.p)));
-function renderAll(){ renderHome(); renderSuggest(); renderPeople(); }
+function renderAll(){ renderHome(); renderSuggest(); renderPeople(); renderNetwork(); }
 switchPage("home");
 </script>
 </body>
