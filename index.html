@@ -207,6 +207,15 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
       </div>
     </div>
     <div class="card">
+      <h2 style="font-size:17px">Smart understanding (Claude)</h2>
+      <p class="hint">Paste your Anthropic API key and Kith uses Claude to genuinely understand your notes — several interactions in one ramble, indirect phrasing, relative dates. The key is stored only on this device and is never included in backups. Without a key, Kith falls back to simple keyword rules.</p>
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <input type="password" id="apiKey" placeholder="sk-ant-…" autocomplete="off">
+        <button class="btn small" id="apiSave">Save</button>
+      </div>
+      <div class="hint" id="apiStatus"></div>
+    </div>
+    <div class="card">
       <h2 style="font-size:17px">How scoring works</h2>
       <p class="hint">Each interaction earns points: <b>channel</b> (in-person 10 · video 6 · call 5 · message 2) × <b>depth</b> (transactional ×1 · social ×2 · substantive ×4 · deep ×8) × <b>initiation</b> (you ×1.5 · mutual ×1.2 · them ×1). Every person’s balance then <b>decays daily</b> — faster for closer circles — so the score genuinely goes backwards when you go quiet. The headline score blends circle coverage (50%), depth mix (20%), initiation (15%) and volume (15%).</p>
     </div>
@@ -370,7 +379,59 @@ function parseNote(text){
   if(!groups.length) groups.push({text, people:findPeopleInText(text)});
   return groups.map(g=>{
     const guess=parseSegment(g.text);
-    return {id:uid(), note:g.text.trim(), personIds:g.people.map(p=>p.id), ...guess};
+    return {id:uid(), note:g.text.trim(), personIds:g.people.map(p=>p.id), pendingNames:[], ...guess};
+  });
+}
+
+/* ---------- Claude-powered understanding ---------- */
+const AK_KEY="kith-api-key";
+function getApiKey(){ try{ return localStorage.getItem(AK_KEY)||""; }catch(e){ return window.__memKey||""; } }
+function setApiKey(k){ try{ localStorage.setItem(AK_KEY,k); }catch(e){ window.__memKey=k; } }
+async function claudeCall(system, userText, maxTokens){
+  const r=await fetch("https://api.anthropic.com/v1/messages",{
+    method:"POST",
+    headers:{"content-type":"application/json","x-api-key":getApiKey(),
+      "anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
+    body:JSON.stringify({model:"claude-haiku-4-5",max_tokens:maxTokens||1200,system,
+      messages:[{role:"user",content:userText}]})
+  });
+  if(!r.ok){ const e=await r.text().catch(()=>""); throw new Error("API "+r.status+(e?": "+e.slice(0,160):"")); }
+  const data=await r.json();
+  return (data.content||[]).map(c=>c.text||"").join("");
+}
+const PARSE_SYSTEM=`You extract social interactions from a person's spoken diary note so they can be scored in a connection-tracking app.
+Return ONLY a JSON array, no prose. One object per distinct interaction (a note may contain several, or one interaction with several people).
+Each object:
+{"people":[names matched EXACTLY from the known-people list],
+ "new_people":[names mentioned but NOT in the known list],
+ "initiator":"me"|"them"|"mutual",  // from the note-writer's perspective; "mutual" for planned/recurring/unclear
+ "depth":1|2|3|4,  // 1=transactional/logistics/admin; 2=social/light catch-up/banter; 3=substantive (real topics, advice, work or life discussed properly); 4=deep (vulnerability, emotions, meaning, hard truths)
+ "channel":"inperson"|"video"|"call"|"message",
+ "date":"YYYY-MM-DD",  // resolve 'yesterday', 'last night', 'this morning', weekday names, relative to today's date given
+ "summary":"<12 words capturing the interaction"}
+Judge depth by substance, not length. Group chat/likes count as "message". If genuinely no interaction is described, return [].`;
+async function aiParse(text){
+  const people=DB.people.map(p=>p.name+((p.aliases||[]).length?` (aka ${p.aliases.join(", ")})`:"")).join("; ")||"(none yet)";
+  const today=new Date();
+  const out=await claudeCall(PARSE_SYSTEM,
+    `Today is ${today.toLocaleDateString("en-GB",{weekday:"long",year:"numeric",month:"long",day:"numeric"})}.\nKnown people: ${people}\n\nNote:\n${text}`);
+  const m=out.match(/\[[\s\S]*\]/); if(!m) throw new Error("Unexpected reply");
+  const arr=JSON.parse(m[0]); if(!Array.isArray(arr)) throw new Error("Unexpected reply");
+  return arr.map(o=>{
+    const personIds=[], pendingNames=[];
+    for(const n of (o.people||[])){
+      const p=DB.people.find(x=>x.name.toLowerCase()===String(n).toLowerCase()
+        || nameTokens(x.name)[0]===String(n).toLowerCase()
+        || (x.aliases||[]).some(a=>a.toLowerCase()===String(n).toLowerCase()));
+      if(p && !personIds.includes(p.id)) personIds.push(p.id); else if(!p) pendingNames.push(String(n));
+    }
+    for(const n of (o.new_people||[])) if(!pendingNames.includes(String(n))) pendingNames.push(String(n));
+    let ts=Date.now();
+    if(o.date && /^\d{4}-\d{2}-\d{2}$/.test(o.date)){ const t=new Date(o.date+"T12:00").getTime(); if(t && t<=Date.now()+DAY) ts=t; }
+    return {id:uid(), ai:true, note:o.summary||text.slice(0,120), personIds, pendingNames,
+      initiator:INITS[o.initiator]?o.initiator:"mutual",
+      depth:Math.min(4,Math.max(1,+o.depth||2)),
+      channel:CHANNELS[o.channel]?o.channel:"inperson", ts};
   });
 }
 
@@ -611,9 +672,10 @@ function renderDrafts(){
   const el=document.getElementById("drafts");
   el.innerHTML=drafts.map((d,di)=>{
     const chips=d.personIds.map(id=>{const p=DB.people.find(x=>x.id===id);
-      return `<span class="chip">${esc(p?.name||"?")}<button data-di="${di}" data-rm="${id}">✕</button></span>`;}).join("");
+      return `<span class="chip">${esc(p?.name||"?")}<button data-di="${di}" data-rm="${id}">✕</button></span>`;}).join("")
+      +(d.pendingNames||[]).map(n=>`<span class="chip" data-pend="${esc(n)}" data-di="${di}" style="background:var(--warn);color:#0b0b0b;cursor:pointer">${esc(n)} — tap to file</span>`).join("");
     return `<div class="card" data-di="${di}">
-      <p class="hint" style="margin:0 0 8px">“${esc(d.note.slice(0,140))}${d.note.length>140?"…":""}”</p>
+      <p class="hint" style="margin:0 0 8px">${d.ai?`<span class="badge" style="margin-right:6px">Claude</span>`:""}“${esc(d.note.slice(0,140))}${d.note.length>140?"…":""}”</p>
       <div class="fld"><label>Who</label><div class="chips">${chips}
         <span class="chip" style="background:transparent"><input type="text" data-addperson="${di}" placeholder="+ add name" style="border:none;background:none;width:90px;padding:2px;font-size:14px"></span></div></div>
       <div class="fld"><label>Who initiated</label><div class="seg" data-set="initiator" data-di="${di}">
@@ -639,6 +701,15 @@ function renderDrafts(){
   el.querySelectorAll("[data-rm]").forEach(b=>b.addEventListener("click",()=>{
     const d=drafts[+b.dataset.di]; d.personIds=d.personIds.filter(id=>id!==b.dataset.rm); renderDrafts();
   }));
+  el.querySelectorAll("[data-pend]").forEach(ch=>ch.addEventListener("click",()=>{
+    const d=drafts[+ch.dataset.di]; const name=ch.dataset.pend;
+    askTier(name, tier=>{
+      const p={id:uid(),name,tier,aliases:[],added:Date.now()};
+      DB.people.push(p); d.personIds.push(p.id);
+      d.pendingNames=d.pendingNames.filter(n=>n!==name);
+      saveDB(); renderDrafts();
+    });
+  }));
   el.querySelectorAll("[data-addperson]").forEach(inp=>inp.addEventListener("keydown",e=>{
     if(e.key!=="Enter") return;
     const name=inp.value.trim(); if(!name) return;
@@ -652,6 +723,7 @@ function renderDrafts(){
   }));
   el.querySelectorAll("[data-save]").forEach(b=>b.addEventListener("click",()=>{
     const d=drafts[+b.dataset.save];
+    if((d.pendingNames||[]).length){ alert("Tap the highlighted name(s) to file them into a circle first."); return; }
     if(!d.personIds.length){ alert("Tag at least one person (type a name and press return)."); return; }
     DB.interactions.push({id:uid(),ts:d.ts,personIds:d.personIds,initiator:d.initiator,depth:d.depth,channel:d.channel,note:d.note});
     // clear snoozes for these people
@@ -662,11 +734,33 @@ function renderDrafts(){
   }));
   el.querySelectorAll("[data-discard]").forEach(b=>b.addEventListener("click",()=>{ drafts.splice(+b.dataset.discard,1); renderDrafts(); }));
 }
-document.getElementById("parseBtn").addEventListener("click",()=>{
+document.getElementById("parseBtn").addEventListener("click",async ()=>{
   const text=document.getElementById("logText").value.trim();
   if(!text) return;
-  drafts=parseNote(text); renderDrafts();
+  const btn=document.getElementById("parseBtn");
+  if(getApiKey()){
+    btn.textContent="Understanding…"; btn.disabled=true;
+    try{ drafts=await aiParse(text); if(!drafts.length){ alert("Claude couldn't find an interaction in that note — try describing who you spoke to."); } }
+    catch(e){ drafts=parseNote(text);
+      alert("Couldn't reach Claude ("+e.message.slice(0,80)+") — used the simple rules instead."); }
+    finally{ btn.textContent="Review & score"; btn.disabled=false; }
+  } else {
+    drafts=parseNote(text);
+  }
+  renderDrafts();
   document.getElementById("drafts").scrollIntoView({behavior:"smooth"});
+});
+/* API key save + live test */
+document.getElementById("apiKey").value=getApiKey();
+document.getElementById("apiSave").addEventListener("click",async ()=>{
+  const k=document.getElementById("apiKey").value.trim();
+  const st=document.getElementById("apiStatus");
+  setApiKey(k);
+  if(!k){ st.textContent="Key removed — back to simple rules."; return; }
+  st.textContent="Testing key…";
+  try{ await claudeCall("Reply with the word OK only.","ping",8);
+    st.textContent="✓ Connected — Claude will now read your notes."; }
+  catch(e){ st.textContent="✗ That key didn't work ("+e.message.slice(0,80)+")."; }
 });
 
 /* ---------- live dictation (webkitSpeechRecognition where supported) ---------- */
