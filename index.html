@@ -5,8 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="theme-color" content="#0d0d0d" media="(prefers-color-scheme: dark)">
-<meta name="theme-color" content="#f9f9f7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#faf6ee">
 <title>Kith — Connection Tracker</title>
 <style>
 /* ---------- design tokens (light) ---------- */
@@ -21,8 +20,7 @@
   --tint-lav:#eef0fc; --tint-mint:#e7f4ec; --tint-peach:#fdeee2; --tint-sky:#e9f2fc; --tint-rose:#fbeaf0; --tint-butter:#faf2d7;
   --shadow:0 2px 10px rgba(90,70,30,.07);
 }
-@media (prefers-color-scheme: dark){
-  :root{
+:root[data-theme="dark"]{
     color-scheme: dark;
     --page:#211e19; --surface:#2b2722; --ink:#f5f1e8; --ink-2:#cbc4b6; --muted:#98917f;
     --grid:#3a352c; --baseline:#4a4438; --ring:rgba(255,245,225,.09);
@@ -31,7 +29,6 @@
     --up:#0ca30c;
     --tint-lav:#333748; --tint-mint:#2c3d33; --tint-peach:#463527; --tint-sky:#2b3a4a; --tint-rose:#43303a; --tint-butter:#403a26;
     --shadow:none;
-  }
 }
 *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
 html,body{margin:0;padding:0}
@@ -221,6 +218,14 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
         <button class="btn secondary small" id="exportBtn">Download backup</button>
         <label class="btn ghost small" style="display:inline-flex;align-items:center">Import backup<input type="file" id="importFile" accept=".json" hidden></label>
         <label class="btn ghost small" style="display:inline-flex;align-items:center">Import contacts (.vcf)<input type="file" id="vcfFile" accept=".vcf,text/vcard" hidden></label>
+      </div>
+    </div>
+    <div class="card">
+      <h2 style="font-size:17px">Appearance</h2>
+      <div class="seg" style="margin-top:10px" id="themeSeg">
+        <button data-th="light">🌞 Bright</button>
+        <button data-th="dark">🌙 Dark</button>
+        <button data-th="auto">Match phone</button>
       </div>
     </div>
     <div class="card">
@@ -890,6 +895,21 @@ document.getElementById("wipeBtn").addEventListener("click",()=>{
   if(confirm("Erase everything? This cannot be undone (export a backup first)."))
   { DB={people:[],interactions:[],candidates:[],scoreHistory:[]}; saveDB(); renderAll(); }
 });
+
+/* ---------- theme ---------- */
+const TH_KEY="kith-theme";
+function getTheme(){ try{ return localStorage.getItem(TH_KEY)||"light"; }catch(e){ return window.__memTheme||"light"; } }
+function setTheme(t){ try{ localStorage.setItem(TH_KEY,t); }catch(e){ window.__memTheme=t; } applyTheme(); }
+const darkMQ=window.matchMedia("(prefers-color-scheme: dark)");
+function applyTheme(){
+  const pref=getTheme();
+  const resolved=pref==="auto"?(darkMQ.matches?"dark":"light"):pref;
+  document.documentElement.dataset.theme=resolved;
+  document.querySelectorAll("#themeSeg button").forEach(b=>b.classList.toggle("on",b.dataset.th===pref));
+}
+darkMQ.addEventListener?.("change",()=>{ if(getTheme()==="auto") applyTheme(); });
+document.querySelectorAll("#themeSeg button").forEach(b=>b.addEventListener("click",()=>setTheme(b.dataset.th)));
+applyTheme();
 
 /* ---------- navigation ---------- */
 function switchPage(p){
