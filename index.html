@@ -883,6 +883,10 @@ function personSheet(pid){
   const dlg=document.createElement("dialog");
   dlg.innerHTML=`<h2 style="font-size:18px;margin-bottom:4px">${esc(p.name)}</h2>
     <div class="fld"><label>Circle</label><div class="seg">${Object.entries(TIERS).map(([k,t])=>`<button data-tier="${k}" class="${p.tier===k?"on":""}">${t.label}</button>`).join("")}</div></div>
+    <div class="fld"><label>Address / area</label><div style="display:flex;gap:8px">
+      <input type="text" id="paddr" value="${esc(p.addr||"")}" placeholder="e.g. Clapham SW4, or Zurich">
+      <button class="btn small" id="paddrSave">Save</button></div>
+      <div class="hint" id="paddrStatus">${p.loc?"📍 on the map":(p.addr?"not mapped yet — run “Put contacts on the map” in Settings":"powers place search and “near me”")}</div></div>
     <div class="sect" style="margin-top:8px">Worth remembering</div>
     <div id="factList">${(p.facts&&p.facts.length)?[...p.facts].reverse().map((f,i)=>
       `<div class="factline"><span class="fk">${KIND_EMOJI[f.kind]||"📝"}</span><span>${esc(f.f)}</span><button data-fdel="${p.facts.length-1-i}">✕</button></div>`).join("")
@@ -903,6 +907,18 @@ function personSheet(pid){
   dlg.querySelectorAll("[data-fdel]").forEach(b=>b.addEventListener("click",()=>{
     p.facts.splice(+b.dataset.fdel,1); saveDB(); dlg.close(); dlg.remove(); personSheet(pid);
   }));
+  dlg.querySelector("#paddrSave").addEventListener("click",async ()=>{
+    const v=dlg.querySelector("#paddr").value.trim();
+    const st=dlg.querySelector("#paddrStatus");
+    if(v===(p.addr||"")){ st.textContent="No change."; return; }
+    p.addr=v||undefined; p.loc=undefined; saveDB();
+    if(v){ st.textContent="Saved — looking it up on the map…";
+      const loc=await geocode(v);
+      if(loc){ p.loc={lat:loc.lat,lon:loc.lon}; saveDB(); st.textContent="📍 Saved and mapped ("+esc(loc.label)+")."; }
+      else st.textContent="Saved, but couldn't find it on the map — try adding a town or postcode.";
+    } else st.textContent="Address removed.";
+    renderAll();
+  });
   dlg.querySelector("#factAddBtn").addEventListener("click",()=>{
     const v=dlg.querySelector("#factAdd").value.trim(); if(!v) return;
     p.facts=p.facts||[]; p.facts.push({f:v,kind:"other",ts:Date.now()});
@@ -1138,11 +1154,27 @@ if(navigator.contacts && navigator.contacts.select){
       try{ const sup=await navigator.contacts.getProperties(); if(sup.includes("address")) props.push("address"); }catch(e){}
       const cs=await navigator.contacts.select(props,{multiple:true});
       const items=cs.map(c=>{ const name=Array.isArray(c.name)?c.name[0]:c.name;
-        const a=(c.address&&c.address[0])||null;
-        const addr=a?[a.city,a.postalCode].filter(Boolean).join(" "):undefined;
+        let addr;
+        const rawA=c.address||c.addresses; // spec name + defensive alias
+        const a=Array.isArray(rawA)?rawA[0]:rawA;
+        if(typeof a==="string") addr=a.trim()||undefined;
+        else if(a && typeof a==="object"){
+          addr=[ (Array.isArray(a.addressLine)?a.addressLine.join(" "):a.addressLine),
+                 a.city||a.locality, a.region, a.postalCode||a.postcode ]
+               .filter(Boolean).join(" ").replace(/\s+/g," ").trim()||undefined;
+          if(!addr && typeof a.toJSON==="function"){ try{ const j=a.toJSON(); addr=[j.city,j.postalCode].filter(Boolean).join(" ")||undefined; }catch(e){} }
+        }
         return name?{name,addr}:null; }).filter(Boolean);
       const added=addCandidates(items);
-      if(added){ alert(added+" added to triage."); switchPage("suggest"); }
+      if(added){
+        const withAddr=items.filter(i=>i.addr).length;
+        if(props.includes("address") && !withAddr)
+          alert(added+" added to triage — but Safari's contact picker didn't hand over any addresses (Apple's experimental picker usually only shares names). You can add an address on each person's profile, or import a .vcf file which carries full addresses.");
+        else if(!props.includes("address"))
+          alert(added+" added to triage. This browser's picker doesn't share addresses at all — add them on each person's profile, or import a .vcf file.");
+        else alert(added+" added to triage ("+withAddr+" with addresses).");
+        switchPage("suggest");
+      }
     }catch(e){ /* user cancelled */ }
   });
 } else {
