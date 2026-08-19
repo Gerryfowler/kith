@@ -18,6 +18,7 @@
   --good:#0ca30c; --warn:#fab219; --serious:#ec835a; --critical:#d03b3b;
   --up:#006300;
   --tint-lav:#eef0fc; --tint-mint:#e7f4ec; --tint-peach:#fdeee2; --tint-sky:#e9f2fc; --tint-rose:#fbeaf0; --tint-butter:#faf2d7;
+  --ring1:#2a78d6; --ring2:#eb6834; --ring3:#1baf7a;
   --shadow:0 2px 10px rgba(90,70,30,.07);
 }
 :root[data-theme="dark"]{
@@ -28,6 +29,7 @@
     --d1:#b7d3f6; --d2:#6da7ec; --d3:#2a78d6; --d4:#1c5cab;
     --up:#0ca30c;
     --tint-lav:#333748; --tint-mint:#2c3d33; --tint-peach:#463527; --tint-sky:#2b3a4a; --tint-rose:#43303a; --tint-butter:#403a26;
+    --ring1:#3987e5; --ring2:#d95926; --ring3:#199e70;
     --shadow:none;
 }
 *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
@@ -148,6 +150,13 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
           <div class="sub" id="scoreDelta"></div>
         </div>
         <div style="flex:1;max-width:220px" id="sparkWrap"></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="lbl" style="font-size:12px;color:var(--ink-2);font-weight:600;text-transform:uppercase;letter-spacing:.05em">Your circles — in rhythm right now</div>
+      <div style="display:flex;align-items:center;gap:16px;margin-top:8px">
+        <div id="ringsViz" style="flex:none"></div>
+        <div id="ringsLegend" style="display:flex;flex-direction:column;gap:8px;font-size:13px;color:var(--ink-2)"></div>
       </div>
     </div>
     <div class="tile-row">
@@ -435,7 +444,26 @@ Each object:
  "facts":[{"person":"Name","fact":"short durable fact worth remembering before next contacting them","kind":"family"|"likes"|"plans"|"work"|"date"|"other"}]}
 Facts are the CRM layer: capture children's/partner's names, likes and dislikes, plans and upcoming events, job changes, things they're worried about or celebrating. Write each fact so it stands alone ("daughter Iris starting secondary school in September"). Only durable, useful facts — no trivia, no restating the interaction itself. Empty array if none.
 ALWAYS capture birthdays, anniversaries and other recurring personal dates as kind "date", converting relative mentions into the actual calendar date using today's date: "it was her birthday yesterday" on 19 August → {"fact":"birthday 18 August","kind":"date"}. A birthday is never trivia.
+The note is usually dictated speech-to-text, so names are often mis-transcribed. If a name is phonetically or visually close to someone on the known-people list ("Sara"/"Serra"→Sarah, "Tomm"→Tom, "Jaymes"→James), treat it as that known person and return the known spelling in "people". Only put a name in "new_people" if it clearly is not a known person.
 Judge depth by substance, not length. Group chat/likes count as "message". If genuinely no interaction is described, return [].`;
+function lev(a,b){
+  const m=a.length,n=b.length; if(!m) return n; if(!n) return m;
+  let prev=Array.from({length:n+1},(_,j)=>j);
+  for(let i=1;i<=m;i++){ const cur=[i];
+    for(let j=1;j<=n;j++) cur[j]=Math.min(prev[j]+1,cur[j-1]+1,prev[j-1]+(a[i-1]===b[j-1]?0:1));
+    prev=cur; }
+  return prev[n];
+}
+function fuzzyFind(raw){
+  const n=String(raw).toLowerCase(); let best=null,bd=9;
+  for(const p of DB.people){
+    const cands=[p.name.toLowerCase(),nameTokens(p.name)[0],...(p.aliases||[]).map(a=>a.toLowerCase())];
+    for(const c of cands){ if(!c) continue;
+      const d=lev(n,c), lim=c.length<=4?1:2;
+      if(d<=lim && d<bd){ bd=d; best=p; } }
+  }
+  return best;
+}
 async function aiParse(text){
   const people=DB.people.map(p=>p.name+((p.aliases||[]).length?` (aka ${p.aliases.join(", ")})`:"")).join("; ")||"(none yet)";
   const today=new Date();
@@ -449,9 +477,14 @@ async function aiParse(text){
       const p=DB.people.find(x=>x.name.toLowerCase()===String(n).toLowerCase()
         || nameTokens(x.name)[0]===String(n).toLowerCase()
         || (x.aliases||[]).some(a=>a.toLowerCase()===String(n).toLowerCase()));
-      if(p && !personIds.includes(p.id)) personIds.push(p.id); else if(!p) pendingNames.push(String(n));
+      const hit=p||fuzzyFind(n);
+      if(hit && !personIds.includes(hit.id)) personIds.push(hit.id); else if(!hit) pendingNames.push(String(n));
     }
-    for(const n of (o.new_people||[])) if(!pendingNames.includes(String(n))) pendingNames.push(String(n));
+    for(const n of (o.new_people||[])){
+      const hit=fuzzyFind(n);
+      if(hit && !personIds.includes(hit.id)) personIds.push(hit.id);
+      else if(!hit && !pendingNames.includes(String(n))) pendingNames.push(String(n));
+    }
     let ts=Date.now();
     if(o.date && /^\d{4}-\d{2}-\d{2}$/.test(o.date)){ const t=new Date(o.date+"T12:00").getTime(); if(t && t<=Date.now()+DAY) ts=t; }
     const facts=(o.facts||[]).map(f=>({person:String(f.person||"").slice(0,60),
@@ -484,7 +517,7 @@ function sparkline(el, series){
     <line x1="${P}" y1="${H-P}" x2="${W-P}" y2="${H-P}" stroke="var(--baseline)" stroke-width="1"/>
     <polyline points="${pts}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
     <circle cx="${x(series.length-1)}" cy="${y(last.v)}" r="3.5" fill="var(--accent)" stroke="var(--tint-lav)" stroke-width="2"/>
-    <text x="${W-P}" y="10" text-anchor="end" font-size="10" fill="var(--muted)">8 wks</text>
+    <text x="${W-P}" y="10" text-anchor="end" font-size="10" fill="var(--muted)">12 wks</text>
   </svg>`;
   const svg=el.querySelector("svg");
   const handle=ev=>{
@@ -534,6 +567,90 @@ function depthMixBar(el, legendEl){
   });
 }
 
+/* ---------- circle rings (fitness-style) ---------- */
+function ringStats(){
+  const now=Date.now();
+  return ["inner","invest","warm"].map((k,i)=>{
+    const t=TIERS[k], ppl=DB.people.filter(p=>p.tier===k);
+    const inRhythm=ppl.filter(p=>{ const l=lastContact(p,now); return l && (now-l)/DAY<=t.cadence; }).length;
+    return {k, label:t.label, n:ppl.length, inRhythm, pct: ppl.length? inRhythm/ppl.length : 0,
+      color:`var(--ring${i+1})`};
+  });
+}
+function renderRings(){
+  const stats=ringStats();
+  const S=140,C=S/2, w=13, radii=[58,42,26];
+  let svg=`<svg viewBox="0 0 ${S} ${S}" width="${S}" height="${S}">`;
+  stats.forEach((s,i)=>{
+    const r=radii[i], circ=2*Math.PI*r;
+    const filled=Math.max(0.001,s.pct)*circ;
+    svg+=`<circle cx="${C}" cy="${C}" r="${r}" fill="none" stroke="var(--grid)" stroke-width="${w}"/>`;
+    if(s.n) svg+=`<g class="ringseg" data-i="${i}"><circle cx="${C}" cy="${C}" r="${r}" fill="none" stroke="${s.color}" stroke-width="${w}"
+      stroke-linecap="round" stroke-dasharray="${filled} ${circ}" transform="rotate(-90 ${C} ${C})"/></g>`;
+  });
+  svg+=`</svg>`;
+  document.getElementById("ringsViz").innerHTML=svg;
+  document.getElementById("ringsLegend").innerHTML=stats.map(s=>
+    `<span style="display:inline-flex;align-items:center;gap:7px">
+      <i style="width:10px;height:10px;border-radius:50%;background:${s.color};display:inline-block"></i>
+      <span><b style="color:var(--ink)">${s.label}</b> — ${s.n? `${s.inRhythm} of ${s.n} in rhythm (${Math.round(s.pct*100)}%)` : "no one filed yet"}</span></span>`).join("");
+  document.querySelectorAll("#ringsViz .ringseg").forEach(g=>{
+    g.addEventListener("pointerenter",ev=>{ const s=stats[+g.dataset.i];
+      showTip(`<b>${s.label}</b> · ${s.inRhythm}/${s.n} contacted within ${TIERS[s.k].cadence} days`,ev.clientX,ev.clientY); });
+    g.addEventListener("pointerleave",hideTip);
+  });
+}
+
+/* ---------- edit a saved interaction ---------- */
+function editInteraction(id){
+  const x=DB.interactions.find(i=>i.id===id); if(!x) return;
+  const dlg=document.createElement("dialog");
+  const chips=()=>x.personIds.map(pid=>{const p=DB.people.find(q=>q.id===pid);
+    return `<span class="chip">${esc(p?.name||"?")}<button data-erm="${pid}">✕</button></span>`;}).join("");
+  dlg.innerHTML=`<h2 style="font-size:17px;margin-bottom:8px">Edit interaction</h2>
+    ${x.note?`<p class="hint" style="margin:0 0 8px">“${esc(x.note.slice(0,120))}”</p>`:""}
+    <div class="fld"><label>Who</label><div class="chips" id="echips">${chips()}
+      <span class="chip" style="background:transparent"><input type="text" id="eadd" placeholder="+ add name" style="border:none;background:none;width:90px;padding:2px;font-size:14px"></span></div></div>
+    <div class="fld"><label>Who initiated</label><div class="seg" data-eset="initiator">
+      ${Object.entries(INITS).map(([k,v])=>`<button data-v="${k}" class="${x.initiator===k?"on":""}">${v.label}</button>`).join("")}</div></div>
+    <div class="fld"><label>Richness</label><div class="seg" data-eset="depth">
+      ${DEPTHS.map(v=>`<button data-v="${v.n}" class="${x.depth===v.n?"on":""}">${v.label}</button>`).join("")}</div></div>
+    <div class="fld"><label>Channel</label><div class="seg" data-eset="channel">
+      ${Object.entries(CHANNELS).map(([k,v])=>`<button data-v="${k}" class="${x.channel===k?"on":""}">${v.label}</button>`).join("")}</div></div>
+    <div class="fld"><label>When</label><input type="date" id="edate" value="${new Date(x.ts).toISOString().slice(0,10)}"></div>
+    <div style="display:flex;gap:8px">
+      <button class="btn small" id="esave">Save changes</button>
+      <button class="btn ghost small" id="ecancel">Cancel</button></div>`;
+  document.body.appendChild(dlg); dlg.showModal();
+  const draft={personIds:[...x.personIds],initiator:x.initiator,depth:x.depth,channel:x.channel,ts:x.ts};
+  dlg.querySelectorAll(".seg[data-eset]").forEach(seg=>seg.querySelectorAll("button").forEach(b=>b.addEventListener("click",()=>{
+    draft[seg.dataset.eset]=seg.dataset.eset==="depth"?+b.dataset.v:b.dataset.v;
+    seg.querySelectorAll("button").forEach(q=>q.classList.toggle("on",q===b));
+  })));
+  const rebindRm=()=>dlg.querySelectorAll("[data-erm]").forEach(b=>b.onclick=()=>{
+    draft.personIds=draft.personIds.filter(pid=>pid!==b.dataset.erm);
+    b.parentElement.remove();
+  });
+  rebindRm();
+  dlg.querySelector("#eadd").addEventListener("keydown",e=>{
+    if(e.key!=="Enter") return;
+    const name=e.target.value.trim(); if(!name) return;
+    let p=DB.people.find(q=>q.name.toLowerCase()===name.toLowerCase())||fuzzyFind(name);
+    const attach=pp=>{ if(!draft.personIds.includes(pp.id)) draft.personIds.push(pp.id);
+      e.target.value="";
+      e.target.parentElement.insertAdjacentHTML("beforebegin",`<span class="chip">${esc(pp.name)}<button data-erm="${pp.id}">✕</button></span>`);
+      rebindRm(); };
+    if(p) attach(p);
+    else askTier(name, tier=>{ const np={id:uid(),name,tier,aliases:[],added:Date.now()}; DB.people.push(np); saveDB(); attach(np); });
+  });
+  dlg.querySelector("#edate").addEventListener("change",e=>{ draft.ts=new Date(e.target.value+"T12:00").getTime(); });
+  dlg.querySelector("#esave").addEventListener("click",()=>{
+    if(!draft.personIds.length){ alert("Keep at least one person on it."); return; }
+    Object.assign(x,draft); saveDB(); dlg.close(); dlg.remove(); renderAll();
+  });
+  dlg.querySelector("#ecancel").addEventListener("click",()=>{ dlg.close(); dlg.remove(); });
+}
+
 /* ---------- rendering ---------- */
 function initials(name){ return name.split(/\s+/).slice(0,2).map(w=>w[0]||"").join("").toUpperCase(); }
 const AV_COLORS=["#cfe0f7","#f9ddc9","#d5eedd","#f3d9e5","#e6e0f7","#f7ecc8"];
@@ -558,7 +675,8 @@ function renderHome(){
     dEl.innerHTML=diff===0?`<span class="sub">flat vs last week</span>`:
       diff>0?`<span class="delta-up">▲ ${diff} vs last week</span>`:`<span class="delta-dn">▼ ${-diff} vs last week</span>`;
   } else dEl.innerHTML=`<span class="sub">log your first interaction</span>`;
-  sparkline(document.getElementById("sparkWrap"), DB.interactions.length?weeklySeries(8):[]);
+  sparkline(document.getElementById("sparkWrap"), DB.interactions.length?weeklySeries(12):[]);
+  renderRings();
   const s=windowStats(now,30);
   document.getElementById("initVal").textContent=s.n?Math.round(100*s.initRatio)+"%":"–";
   document.getElementById("depthVal").textContent=s.n?Math.round(100*s.deepShare)+"%":"–";
@@ -578,8 +696,9 @@ function renderHome(){
     return `<div class="person">${av(names)}
       <div><div class="nm">${esc(names||"(no one tagged)")}</div>
       <div class="meta">${DEPTHS[x.depth-1].label} · ${CHANNELS[x.channel].label} · ${INITS[x.initiator].label} · ${fmtAgo(x.ts)}</div></div>
-      <div class="spacer"></div><span class="badge">+${Math.round(interactionPoints(x))}</span><button class="xdel" data-x="${x.id}">✕</button></div>`;
+      <div class="spacer"></div><span class="badge">+${Math.round(interactionPoints(x))}</span><button class="xdel" data-edit="${x.id}">✎</button><button class="xdel" data-x="${x.id}">✕</button></div>`;
   }).join(""):`<div class="empty">Your logged interactions appear here.</div>`;
+  rec.querySelectorAll("[data-edit]").forEach(b=>b.addEventListener("click",()=>editInteraction(b.dataset.edit)));
   rec.querySelectorAll("[data-x]").forEach(b=>b.addEventListener("click",()=>{
     if(confirm("Delete this interaction? Scores recalculate immediately.")){
       DB.interactions=DB.interactions.filter(i=>i.id!==b.dataset.x); saveDB(); renderAll();
@@ -694,7 +813,7 @@ function personSheet(pid){
     <div class="sect" style="margin-top:12px">History</div>
     ${xs.length?xs.slice(0,20).map(x=>`<div class="person"><div><div class="nm" style="font-size:14px">${DEPTHS[x.depth-1].label} · ${CHANNELS[x.channel].label}</div>
       <div class="meta">${INITS[x.initiator].label} · ${fmtAgo(x.ts)}${x.note?` — ${esc(x.note.slice(0,90))}`:""}</div></div>
-      <div class="spacer"></div><button class="xdel" data-xdel="${x.id}">✕</button></div>`).join("")
+      <div class="spacer"></div><button class="xdel" data-xedit="${x.id}">✎</button><button class="xdel" data-xdel="${x.id}">✕</button></div>`).join("")
       :`<div class="empty">No interactions logged yet.</div>`}
     <div style="display:flex;gap:8px;margin-top:12px">
       <button class="btn small" id="dlgClose">Done</button>
@@ -709,6 +828,9 @@ function personSheet(pid){
     p.facts=p.facts||[]; p.facts.push({f:v,kind:"other",ts:Date.now()});
     saveDB(); dlg.close(); dlg.remove(); personSheet(pid);
   });
+  dlg.querySelectorAll("[data-xedit]").forEach(b=>b.addEventListener("click",()=>{
+    dlg.close(); dlg.remove(); editInteraction(b.dataset.xedit);
+  }));
   dlg.querySelectorAll("[data-xdel]").forEach(b=>b.addEventListener("click",()=>{
     if(confirm("Delete this interaction? Scores recalculate immediately.")){
       DB.interactions=DB.interactions.filter(i=>i.id!==b.dataset.xdel);
