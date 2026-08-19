@@ -1,0 +1,740 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0d0d0d" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f9f9f7" media="(prefers-color-scheme: light)">
+<title>Kith — Connection Tracker</title>
+<style>
+/* ---------- design tokens (light) ---------- */
+:root{
+  color-scheme: light;
+  --page:#f9f9f7; --surface:#fcfcfb; --ink:#0b0b0b; --ink-2:#52514e; --muted:#898781;
+  --grid:#e1e0d9; --baseline:#c3c2b7; --ring:rgba(11,11,11,.10);
+  --accent:#2a78d6; --accent-soft:#cde2fb;
+  --d1:#86b6ef; --d2:#3987e5; --d3:#1c5cab; --d4:#0d366b;       /* ordinal depth ramp */
+  --good:#0ca30c; --warn:#fab219; --serious:#ec835a; --critical:#d03b3b;
+  --up:#006300;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    color-scheme: dark;
+    --page:#0d0d0d; --surface:#1a1a19; --ink:#ffffff; --ink-2:#c3c2b7; --muted:#898781;
+    --grid:#2c2c2a; --baseline:#383835; --ring:rgba(255,255,255,.10);
+    --accent:#3987e5; --accent-soft:#104281;
+    --d1:#b7d3f6; --d2:#6da7ec; --d3:#2a78d6; --d4:#184f95;
+    --up:#0ca30c;
+  }
+}
+*{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0}
+body{
+  font-family:system-ui,-apple-system,"Segoe UI",sans-serif;
+  background:var(--page); color:var(--ink);
+  padding-bottom:calc(76px + env(safe-area-inset-bottom));
+  min-height:100vh;
+}
+h1,h2,h3{margin:0}
+.wrap{max-width:640px;margin:0 auto;padding:16px 16px 8px}
+header.app{padding-top:calc(10px + env(safe-area-inset-top))}
+header.app .brand{display:flex;align-items:baseline;gap:8px}
+header.app h1{font-size:22px;font-weight:800;letter-spacing:-.02em}
+header.app .tag{font-size:12px;color:var(--muted)}
+.banner{background:var(--warn);color:#0b0b0b;font-size:13px;padding:8px 14px;border-radius:10px;margin:10px 0;font-weight:600;display:none}
+
+/* ---------- cards & tiles ---------- */
+.card{background:var(--surface);border:1px solid var(--ring);border-radius:16px;padding:16px;margin-bottom:12px}
+.tile-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.tile .lbl{font-size:12px;color:var(--ink-2);font-weight:600;text-transform:uppercase;letter-spacing:.05em}
+.tile .val{font-size:34px;font-weight:800;line-height:1.15;margin-top:2px}
+.tile .sub{font-size:12px;color:var(--muted);margin-top:2px}
+.delta-up{color:var(--up);font-weight:700;font-size:13px}
+.delta-dn{color:var(--critical);font-weight:700;font-size:13px}
+.sect{font-size:13px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.06em;margin:18px 0 8px}
+
+/* ---------- chart bits ---------- */
+svg text{font-family:inherit}
+.legend{display:flex;flex-wrap:wrap;gap:12px;margin-top:8px}
+.legend span{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-2)}
+.legend i{width:10px;height:10px;border-radius:3px;display:inline-block}
+.tooltip{position:fixed;pointer-events:none;background:var(--surface);border:1px solid var(--ring);
+  box-shadow:0 4px 14px rgba(0,0,0,.18);border-radius:10px;padding:6px 10px;font-size:12px;color:var(--ink);
+  display:none;z-index:50;white-space:nowrap}
+
+/* ---------- buttons & inputs ---------- */
+button{font-family:inherit;border:none;cursor:pointer}
+.btn{background:var(--accent);color:#fff;font-size:16px;font-weight:700;border-radius:14px;padding:14px 18px;width:100%}
+.btn.secondary{background:transparent;color:var(--accent);border:1.5px solid var(--accent)}
+.btn.small{width:auto;padding:8px 14px;font-size:14px;border-radius:10px}
+.btn.ghost{background:transparent;color:var(--ink-2);border:1px solid var(--ring);font-weight:600}
+.btn.danger{background:transparent;color:var(--critical);border:1px solid var(--critical)}
+textarea,input[type=text],input[type=date],input[type=search]{
+  width:100%;font-family:inherit;font-size:16px;color:var(--ink);
+  background:var(--page);border:1px solid var(--ring);border-radius:12px;padding:12px}
+textarea{min-height:110px;resize:vertical;line-height:1.45}
+.seg{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+.seg button{flex:1;min-width:62px;background:var(--page);border:1px solid var(--ring);color:var(--ink-2);
+  border-radius:10px;padding:9px 3px;font-size:12px;font-weight:600;white-space:nowrap}
+.seg button.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.fld{margin-bottom:14px}
+.fld>label{font-size:12px;font-weight:700;color:var(--ink-2);text-transform:uppercase;letter-spacing:.05em}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.chip{background:var(--accent-soft);color:var(--ink);border-radius:999px;padding:7px 12px;font-size:14px;font-weight:600;
+  display:inline-flex;align-items:center;gap:6px;border:1px solid var(--ring)}
+.chip button{background:none;color:var(--ink-2);font-size:15px;padding:0 2px}
+.hint{font-size:12.5px;color:var(--muted);line-height:1.45;margin-top:6px}
+
+/* ---------- people list ---------- */
+.person{display:flex;align-items:center;gap:12px;padding:12px 4px;border-bottom:1px solid var(--grid)}
+.person:last-child{border-bottom:none}
+.avatar{width:40px;height:40px;border-radius:50%;background:var(--accent-soft);color:var(--ink);
+  display:flex;align-items:center;justify-content:center;font-weight:800;font-size:15px;flex:none}
+.person .nm{font-weight:700;font-size:15.5px}
+.person .meta{font-size:12.5px;color:var(--muted);margin-top:1px}
+.status{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:700}
+.status i{width:9px;height:9px;border-radius:50%;display:inline-block}
+.spacer{flex:1}
+
+/* ---------- suggestion cards ---------- */
+.sugg{display:flex;flex-direction:column;gap:8px;padding:14px;border:1px solid var(--ring);border-radius:14px;
+  background:var(--surface);margin-bottom:10px}
+.sugg .why{font-size:13px;color:var(--ink-2);line-height:1.4}
+.sugg .row{display:flex;gap:8px}
+
+/* ---------- tabs ---------- */
+nav.tabs{position:fixed;bottom:0;left:0;right:0;background:var(--surface);border-top:1px solid var(--ring);
+  display:flex;justify-content:space-around;padding:8px 4px calc(8px + env(safe-area-inset-bottom));z-index:40}
+nav.tabs button{background:none;color:var(--muted);font-size:11px;font-weight:700;display:flex;flex-direction:column;
+  align-items:center;gap:3px;padding:4px 10px;border-radius:10px}
+nav.tabs button svg{width:22px;height:22px}
+nav.tabs button.on{color:var(--accent)}
+.page{display:none}.page.on{display:block}
+.empty{color:var(--muted);font-size:14px;text-align:center;padding:28px 10px;line-height:1.5}
+.mic-live{background:var(--critical)!important}
+dialog{border:none;border-radius:18px;background:var(--surface);color:var(--ink);max-width:560px;width:92vw;padding:18px}
+dialog::backdrop{background:rgba(0,0,0,.45)}
+.badge{font-size:11px;font-weight:800;padding:3px 8px;border-radius:999px;background:var(--page);border:1px solid var(--ring);color:var(--ink-2)}
+</style>
+</head>
+<body>
+<div class="tooltip" id="tooltip"></div>
+
+<div class="wrap">
+  <header class="app">
+    <div class="brand"><h1>Kith</h1><span class="tag">your connection portfolio</span></div>
+    <div class="banner" id="previewBanner">Preview mode — data won’t be saved in this window. It saves permanently once hosted at your own web address.</div>
+  </header>
+
+  <!-- ============ HOME ============ -->
+  <section class="page" id="page-home">
+    <div class="card tile" id="scoreTile">
+      <div class="lbl">Connection score</div>
+      <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:10px">
+        <div>
+          <div class="val" id="scoreVal">–</div>
+          <div class="sub" id="scoreDelta"></div>
+        </div>
+        <div style="flex:1;max-width:220px" id="sparkWrap"></div>
+      </div>
+    </div>
+    <div class="tile-row">
+      <div class="card tile"><div class="lbl">Initiation</div><div class="val" id="initVal">–</div><div class="sub">of interactions started by you (30d)</div></div>
+      <div class="card tile"><div class="lbl">Depth</div><div class="val" id="depthVal">–</div><div class="sub">substantive or deep (30d)</div></div>
+    </div>
+    <div class="card">
+      <div class="lbl" style="font-size:12px;color:var(--ink-2);font-weight:600;text-transform:uppercase;letter-spacing:.05em">Depth mix — last 30 days</div>
+      <div id="depthBar" style="margin-top:10px"></div>
+      <div class="legend" id="depthLegend"></div>
+    </div>
+    <div class="sect">Needs attention</div>
+    <div id="homeAttention"></div>
+    <div class="sect">Recent</div>
+    <div class="card" id="homeRecent"></div>
+  </section>
+
+  <!-- ============ LOG ============ -->
+  <section class="page" id="page-log">
+    <div class="card">
+      <h2 style="font-size:17px;margin-bottom:6px">Describe your interactions</h2>
+      <p class="hint" style="margin:0 0 10px">Tap the box, then use the <b>microphone key on your keyboard</b> to dictate — or type. Say who, who initiated, and how rich it was.<br>
+      <i>“Had a deep chat over dinner with Sarah — she suggested it. Quick logistics call with Tom, I rang him.”</i></p>
+      <textarea id="logText" placeholder="Coffee with James this morning, I organised it, proper catch-up about his new role…"></textarea>
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <button class="btn" id="parseBtn">Review &amp; score</button>
+        <button class="btn secondary small" id="liveMicBtn" style="display:none;white-space:nowrap">🎙 Live</button>
+      </div>
+    </div>
+    <div id="drafts"></div>
+  </section>
+
+  <!-- ============ SUGGESTIONS ============ -->
+  <section class="page" id="page-suggest">
+    <div class="sect" style="margin-top:4px">Reach out</div>
+    <div id="suggList"></div>
+    <div class="sect">Triage — decide who to invest in</div>
+    <p class="hint" style="margin:0 0 10px">Add names from your contacts (paste a list or import a .vcf in Settings), then file each one.</p>
+    <div id="triageList"></div>
+    <div class="card">
+      <div class="fld"><label>Paste names (one per line)</label>
+      <textarea id="candPaste" style="min-height:70px" placeholder="Rob Citrone&#10;Anna Marsh&#10;…"></textarea></div>
+      <button class="btn secondary" id="candAdd">Add to triage</button>
+    </div>
+  </section>
+
+  <!-- ============ PEOPLE ============ -->
+  <section class="page" id="page-people">
+    <div class="card">
+      <div style="display:flex;gap:8px">
+        <input type="text" id="newPersonName" placeholder="Add a person…">
+        <button class="btn small" id="newPersonBtn">Add</button>
+      </div>
+    </div>
+    <div id="peopleList"></div>
+  </section>
+
+  <!-- ============ SETTINGS ============ -->
+  <section class="page" id="page-settings">
+    <div class="card">
+      <h2 style="font-size:17px">Your data</h2>
+      <p class="hint">Everything lives on this phone, in this browser. Back it up occasionally — the file downloads to your phone and can be re-imported here or on a new device.</p>
+      <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+        <button class="btn secondary small" id="exportBtn">Download backup</button>
+        <label class="btn ghost small" style="display:inline-flex;align-items:center">Import backup<input type="file" id="importFile" accept=".json" hidden></label>
+        <label class="btn ghost small" style="display:inline-flex;align-items:center">Import contacts (.vcf)<input type="file" id="vcfFile" accept=".vcf,text/vcard" hidden></label>
+      </div>
+    </div>
+    <div class="card">
+      <h2 style="font-size:17px">How scoring works</h2>
+      <p class="hint">Each interaction earns points: <b>channel</b> (in-person 10 · video 6 · call 5 · message 2) × <b>depth</b> (transactional ×1 · social ×2 · substantive ×4 · deep ×8) × <b>initiation</b> (you ×1.5 · mutual ×1.2 · them ×1). Every person’s balance then <b>decays daily</b> — faster for closer circles — so the score genuinely goes backwards when you go quiet. The headline score blends circle coverage (50%), depth mix (20%), initiation (15%) and volume (15%).</p>
+    </div>
+    <div class="card">
+      <button class="btn danger" id="wipeBtn">Erase all data</button>
+    </div>
+  </section>
+</div>
+
+<nav class="tabs" id="tabs">
+  <button data-p="home" class="on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12l9-8 9 8"/><path d="M5 10v10h14V10"/></svg>Home</button>
+  <button data-p="log"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0014 0M12 18v3"/></svg>Log</button>
+  <button data-p="suggest"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v3M5.6 5.6l2.1 2.1M3 12h3M18 12h3M16.3 7.7l2.1-2.1"/><circle cx="12" cy="14" r="4"/><path d="M10 21h4"/></svg>Suggest</button>
+  <button data-p="people"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.5 3.4-5.5 6.5-5.5s5.7 2 6.5 5.5"/><circle cx="17.5" cy="9" r="2.5"/><path d="M16 14.7c2.6.3 4.6 2 5.3 4.8"/></svg>People</button>
+  <button data-p="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 00-.1-1.2l2-1.5-2-3.4-2.3 1a7 7 0 00-2-1.2L14.2 3h-4l-.4 2.5a7 7 0 00-2 1.2l-2.3-1-2 3.4 2 1.5A7 7 0 005 12c0 .4 0 .8.1 1.2l-2 1.5 2 3.4 2.3-1c.6.5 1.3.9 2 1.2l.4 2.5h4l.4-2.5a7 7 0 002-1.2l2.3 1 2-3.4-2-1.5c.1-.4.1-.8.1-1.2z"/></svg>Settings</button>
+</nav>
+
+<script>
+"use strict";
+/* =====================================================================
+   Kith v0.1 — personal connection tracker
+   All data local. No servers. Built for Gerry, August 2026.
+===================================================================== */
+
+/* ---------- storage (with in-memory fallback for preview mode) ---------- */
+const KEY="kith-data-v1";
+let memStore=null;
+function loadDB(){
+  try{ const raw=localStorage.getItem(KEY); if(raw) return JSON.parse(raw); }
+  catch(e){ document.getElementById("previewBanner").style.display="block"; }
+  return memStore || { people:[], interactions:[], candidates:[], scoreHistory:[] };
+}
+function saveDB(){
+  try{ localStorage.setItem(KEY, JSON.stringify(DB)); }
+  catch(e){ memStore=DB; document.getElementById("previewBanner").style.display="block"; }
+}
+let DB=loadDB();
+
+/* ---------- model constants ---------- */
+const TIERS={
+  inner:{label:"Inner circle", cadence:7,  halflife:12, weight:1.2},
+  invest:{label:"Invest",      cadence:14, halflife:21, weight:1.5},
+  warm:{label:"Keep warm",     cadence:60, halflife:60, weight:0.7},
+  notnow:{label:"Not now",     cadence:0,  halflife:0,  weight:0}
+};
+const CHANNELS={inperson:{label:"In person",base:10},video:{label:"Video",base:6},call:{label:"Call",base:5},message:{label:"Message",base:2}};
+const DEPTHS=[
+  {n:1,label:"Transactional",mult:1},
+  {n:2,label:"Social",mult:2},
+  {n:3,label:"Substantive",mult:4},
+  {n:4,label:"Deep",mult:8}
+];
+const INITS={me:{label:"I did",mult:1.5},mutual:{label:"Planned",mult:1.2},them:{label:"They did",mult:1.0}};
+const DAY=86400000;
+const uid=()=>Math.random().toString(36).slice(2,10);
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+/* ---------- scoring engine ---------- */
+function interactionPoints(x){
+  return (CHANNELS[x.channel]?.base||3) * (DEPTHS[x.depth-1]?.mult||2) * (INITS[x.initiator]?.mult||1);
+}
+function personBalance(p, asOf){
+  const t=TIERS[p.tier]||TIERS.warm; if(!t.halflife) return 0;
+  let b=0;
+  for(const x of DB.interactions){
+    if(x.ts>asOf) continue;
+    if(!x.personIds.includes(p.id)) continue;
+    const days=(asOf-x.ts)/DAY;
+    b += interactionPoints(x) * Math.pow(0.5, days/t.halflife);
+  }
+  return b;
+}
+function healthOf(balance){ // status buckets
+  if(balance>=60) return {k:"good",label:"healthy",color:"var(--good)"};
+  if(balance>=25) return {k:"warn",label:"fading",color:"var(--warn)"};
+  if(balance>=8)  return {k:"serious",label:"at risk",color:"var(--serious)"};
+  return {k:"critical",label:"cold",color:"var(--critical)"};
+}
+function lastContact(p, asOf){
+  let last=null;
+  for(const x of DB.interactions) if(x.ts<=asOf && x.personIds.includes(p.id) && (!last||x.ts>last)) last=x.ts;
+  return last;
+}
+function windowStats(asOf, days){
+  const from=asOf-days*DAY;
+  const xs=DB.interactions.filter(x=>x.ts>from && x.ts<=asOf);
+  const n=xs.length;
+  const initMe=xs.filter(x=>x.initiator==="me").length;
+  const deepShare = n? xs.filter(x=>x.depth>=3).length/n : 0;
+  return {n, initRatio: n? initMe/n : 0, deepShare, xs};
+}
+function connectionScore(asOf){
+  const tracked=DB.people.filter(p=>p.tier!=="notnow");
+  const core=tracked.filter(p=>p.tier==="inner"||p.tier==="invest");
+  // coverage: share of core people not "at risk/cold", tier-weighted
+  let covNum=0, covDen=0;
+  for(const p of core){
+    const w=TIERS[p.tier].weight; covDen+=w;
+    const b=personBalance(p,asOf);
+    covNum += w * Math.min(1, b/40);
+  }
+  const coverage = covDen? covNum/covDen : 0;
+  const s=windowStats(asOf,30);
+  const volume = Math.min(1, s.n/20); // ~5 logged interactions/week = full marks
+  const raw = 100*(0.50*coverage + 0.20*s.deepShare + 0.15*s.initRatio + 0.15*volume);
+  return Math.round(raw);
+}
+function weeklySeries(weeks){
+  const now=Date.now(), out=[];
+  for(let i=weeks-1;i>=0;i--) out.push({t:now-i*7*DAY, v:connectionScore(now-i*7*DAY)});
+  return out;
+}
+
+/* ---------- name matching & parsing ---------- */
+function nameTokens(name){ return name.toLowerCase().split(/\s+/).filter(Boolean); }
+function findPeopleInText(text){
+  const lower=" "+text.toLowerCase().replace(/[^a-zÀ-ɏ'\- ]/g," ")+" ";
+  const hits=[];
+  for(const p of DB.people){
+    for(const tok of [nameTokens(p.name)[0], ...(p.aliases||[]).map(a=>a.toLowerCase())]){
+      if(tok && tok.length>=3 && lower.includes(" "+tok+" ")){ hits.push(p); break; }
+    }
+  }
+  return hits;
+}
+const DEPTH_CUES=[
+  {re:/\b(deep|meaningful|heart[- ]to[- ]heart|opened up|emotional|vulnerab|really connected|profound)\b/i, d:4},
+  {re:/\b(proper|substantive|long (chat|talk|call)|good (long )?(chat|talk|conversation)|advice|talked (about|through)|discussed|career|worri|problem)\b/i, d:3},
+  {re:/\b(catch[- ]?up|caught up|social|drinks|coffee|banter|chat|lunch|dinner|walk)\b/i, d:2},
+  {re:/\b(logistic|quick|admin|schedul|transactional|arrang|confirm|brief)\b/i, d:1}
+];
+const INIT_ME=/\b(i (called|rang|phoned|messaged|texted|emailed|invited|organised|organized|arranged|reached out|suggested|set (it )?up)|my (idea|suggestion|invite)|i initiated)\b/i;
+const INIT_THEM=/\b((s?he|they) (called|rang|phoned|messaged|texted|emailed|invited|organised|organized|arranged|reached out|suggested|set (it )?up)|called me|rang me|texted me|messaged me|invited me|reached out to me|(his|her|their) (idea|suggestion|invite))\b/i;
+const CHAN_CUES=[
+  {re:/\b(dinner|lunch|coffee|drinks|in person|met (up|with)|walk|breakfast|pub|party|came (over|round)|visit)\b/i, c:"inperson"},
+  {re:/\b(facetime|zoom|video ?call|teams|meet)\b/i, c:"video"},
+  {re:/\b(called|rang|phoned|phone call|spoke on the phone|call with)\b/i, c:"call"},
+  {re:/\b(text|whatsapp|message|emailed|email|dm|voice note)\b/i, c:"message"}
+];
+function parseSegment(seg){
+  let depth=2, channel="inperson", initiator="mutual";
+  for(const c of DEPTH_CUES){ if(c.re.test(seg)){ depth=c.d; break; } }
+  for(const c of CHAN_CUES){ if(c.re.test(seg)){ channel=c.c; break; } }
+  if(INIT_ME.test(seg)) initiator="me"; else if(INIT_THEM.test(seg)) initiator="them";
+  let ts=Date.now();
+  if(/\b(yesterday|last night)\b/i.test(seg)) ts-=DAY;
+  return {depth, channel, initiator, ts};
+}
+function parseNote(text){
+  // split into sentences; group consecutive sentences by the people they mention
+  const sentences=text.split(/(?<=[.!?])\s+|\n+/).filter(s=>s.trim());
+  const groups=[];
+  let cur=null;
+  for(const s of sentences){
+    const ppl=findPeopleInText(s);
+    if(ppl.length){ // new group per sentence with names
+      cur={text:s, people:ppl}; groups.push(cur);
+    } else if(cur){ cur.text+=" "+s; }
+    else { cur={text:s, people:[]}; groups.push(cur); }
+  }
+  if(!groups.length) groups.push({text, people:findPeopleInText(text)});
+  return groups.map(g=>{
+    const guess=parseSegment(g.text);
+    return {id:uid(), note:g.text.trim(), personIds:g.people.map(p=>p.id), ...guess};
+  });
+}
+
+/* ---------- charts (dataviz spec: thin marks, 2px line, hover layer) ---------- */
+const tooltip=document.getElementById("tooltip");
+function showTip(html,x,y){ tooltip.innerHTML=html; tooltip.style.display="block";
+  const r=tooltip.getBoundingClientRect();
+  tooltip.style.left=Math.min(innerWidth-r.width-8,Math.max(8,x-r.width/2))+"px";
+  tooltip.style.top=(y-r.height-14)+"px"; }
+function hideTip(){ tooltip.style.display="none"; }
+
+function sparkline(el, series){
+  if(!series.length){ el.innerHTML=""; return; }
+  const W=220,H=56,P=6;
+  const vs=series.map(d=>d.v), min=Math.min(...vs,0), max=Math.max(...vs,10);
+  const x=i=>P+(W-2*P)*i/(series.length-1||1);
+  const y=v=>H-P-(H-2*P)*((v-min)/((max-min)||1));
+  const pts=series.map((d,i)=>`${x(i)},${y(d.v)}`).join(" ");
+  const last=series[series.length-1];
+  el.innerHTML=`<svg viewBox="0 0 ${W} ${H}" width="100%" style="touch-action:none">
+    <line x1="${P}" y1="${H-P}" x2="${W-P}" y2="${H-P}" stroke="var(--baseline)" stroke-width="1"/>
+    <polyline points="${pts}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+    <circle cx="${x(series.length-1)}" cy="${y(last.v)}" r="3.5" fill="var(--accent)" stroke="var(--surface)" stroke-width="2"/>
+    <text x="${W-P}" y="10" text-anchor="end" font-size="10" fill="var(--muted)">8 wks</text>
+  </svg>`;
+  const svg=el.querySelector("svg");
+  const handle=ev=>{
+    const t=ev.touches?ev.touches[0]:ev;
+    const rect=svg.getBoundingClientRect();
+    const i=Math.max(0,Math.min(series.length-1,Math.round((t.clientX-rect.left)/rect.width*(series.length-1))));
+    const d=series[i];
+    showTip(`<b>${d.v}</b> · ${new Date(d.t).toLocaleDateString(undefined,{day:"numeric",month:"short"})}`, t.clientX, rect.top);
+  };
+  svg.addEventListener("pointermove",handle);
+  svg.addEventListener("touchmove",handle,{passive:true});
+  svg.addEventListener("pointerleave",hideTip);
+  svg.addEventListener("touchend",hideTip);
+}
+
+function depthMixBar(el, legendEl){
+  const s=windowStats(Date.now(),30);
+  const counts=[0,0,0,0];
+  s.xs.forEach(x=>counts[x.depth-1]++);
+  const total=counts.reduce((a,b)=>a+b,0);
+  if(!total){ el.innerHTML=`<div class="empty" style="padding:10px">No interactions logged in the last 30 days yet.</div>`; legendEl.innerHTML=""; return; }
+  const colors=["var(--d1)","var(--d2)","var(--d3)","var(--d4)"];
+  const W=600,H=34;
+  let acc=0, segs="";
+  const segData=[];
+  counts.forEach((c,i)=>{
+    if(!c) return;
+    const w=(W*c/total);
+    segData.push({x:acc,w,i,c});
+    acc+=w;
+  });
+  segs=segData.map((sd,j)=>{
+    const pct=Math.round(100*sd.c/total);
+    const lab=(sd.w>60)?`<text x="${sd.x+sd.w/2}" y="${H/2+4}" text-anchor="middle" font-size="12" font-weight="700" fill="${sd.i>=2?'#fff':'var(--ink)'}">${pct}%</text>`:"";
+    // 2px surface gap between segments via stroke
+    return `<g class="dseg" data-i="${sd.i}" data-c="${sd.c}" data-p="${pct}">
+      <rect x="${sd.x}" y="4" width="${sd.w}" height="${H-8}" rx="4" fill="${colors[sd.i]}" stroke="var(--surface)" stroke-width="2"/>${lab}</g>`;
+  }).join("");
+  el.innerHTML=`<svg viewBox="0 0 ${W} ${H}" width="100%">${segs}</svg>`;
+  legendEl.innerHTML=DEPTHS.map((d,i)=>`<span><i style="background:${colors[i]}"></i>${d.label}</span>`).join("");
+  el.querySelectorAll(".dseg").forEach(g=>{
+    g.addEventListener("pointerenter",ev=>{
+      const i=+g.dataset.i;
+      showTip(`<b>${DEPTHS[i].label}</b> · ${g.dataset.c} interaction${g.dataset.c>1?"s":""} (${g.dataset.p}%)`, ev.clientX, ev.clientY);
+    });
+    g.addEventListener("pointerleave",hideTip);
+  });
+}
+
+/* ---------- rendering ---------- */
+function initials(name){ return name.split(/\s+/).slice(0,2).map(w=>w[0]||"").join("").toUpperCase(); }
+function fmtAgo(ts){
+  if(!ts) return "never";
+  const d=Math.floor((Date.now()-ts)/DAY);
+  if(d===0) return "today"; if(d===1) return "yesterday";
+  if(d<14) return d+" days ago"; if(d<70) return Math.round(d/7)+" weeks ago";
+  return Math.round(d/30)+" months ago";
+}
+
+function renderHome(){
+  const now=Date.now();
+  const score=connectionScore(now), prev=connectionScore(now-7*DAY);
+  document.getElementById("scoreVal").textContent=DB.interactions.length?score:"–";
+  const dEl=document.getElementById("scoreDelta");
+  if(DB.interactions.length){
+    const diff=score-prev;
+    dEl.innerHTML=diff===0?`<span class="sub">flat vs last week</span>`:
+      diff>0?`<span class="delta-up">▲ ${diff} vs last week</span>`:`<span class="delta-dn">▼ ${-diff} vs last week</span>`;
+  } else dEl.innerHTML=`<span class="sub">log your first interaction</span>`;
+  sparkline(document.getElementById("sparkWrap"), DB.interactions.length?weeklySeries(8):[]);
+  const s=windowStats(now,30);
+  document.getElementById("initVal").textContent=s.n?Math.round(100*s.initRatio)+"%":"–";
+  document.getElementById("depthVal").textContent=s.n?Math.round(100*s.deepShare)+"%":"–";
+  depthMixBar(document.getElementById("depthBar"), document.getElementById("depthLegend"));
+
+  // needs attention: top 3 by urgency
+  const att=document.getElementById("homeAttention");
+  const urgent=suggestions().slice(0,3);
+  att.innerHTML=urgent.length?urgent.map(u=>suggCard(u,true)).join(""):
+    `<div class="card empty">Nothing urgent — nice.</div>`;
+  bindSuggButtons(att);
+
+  const rec=document.getElementById("homeRecent");
+  const xs=[...DB.interactions].sort((a,b)=>b.ts-a.ts).slice(0,6);
+  rec.innerHTML=xs.length?xs.map(x=>{
+    const names=x.personIds.map(id=>DB.people.find(p=>p.id===id)?.name||"?").join(", ");
+    return `<div class="person"><div class="avatar">${esc(initials(names))}</div>
+      <div><div class="nm">${esc(names||"(no one tagged)")}</div>
+      <div class="meta">${DEPTHS[x.depth-1].label} · ${CHANNELS[x.channel].label} · ${INITS[x.initiator].label} · ${fmtAgo(x.ts)}</div></div>
+      <div class="spacer"></div><span class="badge">+${Math.round(interactionPoints(x))}</span></div>`;
+  }).join(""):`<div class="empty">Your logged interactions appear here.</div>`;
+}
+
+function suggestions(){
+  const now=Date.now(), out=[];
+  for(const p of DB.people){
+    const t=TIERS[p.tier]; if(!t||!t.cadence) continue;
+    if(p.snoozeUntil && p.snoozeUntil>now) continue;
+    const last=lastContact(p,now);
+    const days=last?(now-last)/DAY:999;
+    const overdue=days/t.cadence;
+    if(overdue<1) continue;
+    out.push({p, last, days:Math.round(days), urgency:overdue*t.weight});
+  }
+  return out.sort((a,b)=>b.urgency-a.urgency);
+}
+function suggCard(u, compact){
+  const t=TIERS[u.p.tier];
+  const b=personBalance(u.p,Date.now()), h=healthOf(b);
+  return `<div class="sugg" data-pid="${u.p.id}">
+    <div style="display:flex;align-items:center;gap:10px">
+      <div class="avatar">${esc(initials(u.p.name))}</div>
+      <div><div class="nm" style="font-weight:700">${esc(u.p.name)}</div>
+      <span class="status" style="color:${h.color}"><i style="background:${h.color}"></i>${h.label}</span></div>
+      <div class="spacer"></div><span class="badge">${t.label}</span>
+    </div>
+    <div class="why">Last contact <b>${u.last?fmtAgo(u.last):"never logged"}</b>${t.cadence?` — your rhythm for this circle is every ${t.cadence} days`:""}.</div>
+    <div class="row">
+      <button class="btn small" data-act="log">I reached out</button>
+      <button class="btn ghost small" data-act="snooze">Snooze 1w</button>
+      ${compact?"":`<button class="btn ghost small" data-act="tier">Change circle</button>`}
+    </div></div>`;
+}
+function bindSuggButtons(root){
+  root.querySelectorAll(".sugg").forEach(card=>{
+    const pid=card.dataset.pid;
+    card.querySelectorAll("button").forEach(b=>b.addEventListener("click",()=>{
+      const p=DB.people.find(x=>x.id===pid);
+      if(b.dataset.act==="log"){ switchPage("log");
+        document.getElementById("logText").value=`With ${p.name}, I reached out — `;
+        document.getElementById("logText").focus(); }
+      if(b.dataset.act==="snooze"){ p.snoozeUntil=Date.now()+7*DAY; saveDB(); renderAll(); }
+      if(b.dataset.act==="tier"){ askTier(p.name, tier=>{ p.tier=tier; saveDB(); renderAll(); }); }
+    }));
+  });
+}
+function renderSuggest(){
+  const el=document.getElementById("suggList");
+  const list=suggestions();
+  el.innerHTML=list.length?list.map(u=>suggCard(u,false)).join(""):
+    `<div class="card empty">No one is overdue. Suggestions appear when someone in your circles has gone quiet longer than that circle’s rhythm.</div>`;
+  bindSuggButtons(el);
+  const tl=document.getElementById("triageList");
+  tl.innerHTML=DB.candidates.length?DB.candidates.slice(0,8).map(c=>`
+    <div class="card" data-cand="${esc(c)}" style="padding:12px 14px">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+        <div class="avatar">${esc(initials(c))}</div><div class="nm" style="font-weight:700">${esc(c)}</div></div>
+      <div class="seg">
+        ${Object.entries(TIERS).map(([k,t])=>`<button data-tier="${k}">${t.label}</button>`).join("")}
+        <button data-tier="skip">✕ Skip</button>
+      </div></div>`).join("")+(DB.candidates.length>8?`<p class="hint">${DB.candidates.length-8} more to triage…</p>`:"")
+    :`<div class="card empty">No one waiting to be filed.</div>`;
+  tl.querySelectorAll("[data-cand]").forEach(card=>{
+    const name=card.dataset.cand;
+    card.querySelectorAll("button").forEach(b=>b.addEventListener("click",()=>{
+      DB.candidates=DB.candidates.filter(c=>c!==name);
+      if(b.dataset.tier!=="skip") DB.people.push({id:uid(),name,tier:b.dataset.tier,aliases:[],added:Date.now()});
+      saveDB(); renderAll();
+    }));
+  });
+}
+function renderPeople(){
+  const el=document.getElementById("peopleList");
+  const order=["inner","invest","warm","notnow"];
+  let html="";
+  for(const k of order){
+    const ppl=DB.people.filter(p=>p.tier===k).sort((a,b)=>a.name.localeCompare(b.name));
+    if(!ppl.length) continue;
+    html+=`<div class="sect">${TIERS[k].label} · ${ppl.length}</div><div class="card">`;
+    html+=ppl.map(p=>{
+      const b=personBalance(p,Date.now()), h=healthOf(b), last=lastContact(p,Date.now());
+      return `<div class="person" data-pid="${p.id}">
+        <div class="avatar">${esc(initials(p.name))}</div>
+        <div><div class="nm">${esc(p.name)}</div><div class="meta">last: ${fmtAgo(last)}</div></div>
+        <div class="spacer"></div>
+        ${k!=="notnow"?`<span class="status" style="color:${h.color}"><i style="background:${h.color}"></i>${h.label}</span>`:""}
+      </div>`;
+    }).join("");
+    html+=`</div>`;
+  }
+  el.innerHTML=html||`<div class="card empty">Add the people who matter — start with your inner circle (≈5) and the people you want to invest in.</div>`;
+  el.querySelectorAll(".person").forEach(row=>row.addEventListener("click",()=>personSheet(row.dataset.pid)));
+}
+function personSheet(pid){
+  const p=DB.people.find(x=>x.id===pid); if(!p) return;
+  const xs=DB.interactions.filter(x=>x.personIds.includes(pid)).sort((a,b)=>b.ts-a.ts);
+  const dlg=document.createElement("dialog");
+  dlg.innerHTML=`<h2 style="font-size:18px;margin-bottom:4px">${esc(p.name)}</h2>
+    <div class="fld"><label>Circle</label><div class="seg">${Object.entries(TIERS).map(([k,t])=>`<button data-tier="${k}" class="${p.tier===k?"on":""}">${t.label}</button>`).join("")}</div></div>
+    <div class="sect" style="margin-top:8px">History</div>
+    ${xs.length?xs.slice(0,20).map(x=>`<div class="person"><div><div class="nm" style="font-size:14px">${DEPTHS[x.depth-1].label} · ${CHANNELS[x.channel].label}</div>
+      <div class="meta">${INITS[x.initiator].label} · ${fmtAgo(x.ts)}${x.note?` — ${esc(x.note.slice(0,90))}`:""}</div></div></div>`).join("")
+      :`<div class="empty">No interactions logged yet.</div>`}
+    <div style="display:flex;gap:8px;margin-top:12px">
+      <button class="btn small" id="dlgClose">Done</button>
+      <button class="btn danger small" id="dlgDel">Remove person</button></div>`;
+  document.body.appendChild(dlg); dlg.showModal();
+  dlg.querySelectorAll("[data-tier]").forEach(b=>b.addEventListener("click",()=>{ p.tier=b.dataset.tier; saveDB(); dlg.close(); dlg.remove(); renderAll(); }));
+  dlg.querySelector("#dlgClose").addEventListener("click",()=>{ dlg.close(); dlg.remove(); });
+  dlg.querySelector("#dlgDel").addEventListener("click",()=>{ if(confirm(`Remove ${p.name}? Their logged interactions stay but untagged.`)){ DB.people=DB.people.filter(x=>x.id!==pid); saveDB(); dlg.close(); dlg.remove(); renderAll(); }});
+}
+function askTier(name, cb){
+  const dlg=document.createElement("dialog");
+  dlg.innerHTML=`<h2 style="font-size:17px">Which circle is ${esc(name)} in?</h2>
+    <div class="seg" style="margin-top:12px">${Object.entries(TIERS).map(([k,t])=>`<button data-tier="${k}">${t.label}</button>`).join("")}</div>
+    <p class="hint">Inner ≈ your closest ~5 · Invest = actively building · Keep warm = don’t lose touch · Not now = tracked but no nudges.</p>`;
+  document.body.appendChild(dlg); dlg.showModal();
+  dlg.querySelectorAll("button").forEach(b=>b.addEventListener("click",()=>{ dlg.close(); dlg.remove(); cb(b.dataset.tier); }));
+}
+
+/* ---------- log drafts ---------- */
+let drafts=[];
+function renderDrafts(){
+  const el=document.getElementById("drafts");
+  el.innerHTML=drafts.map((d,di)=>{
+    const chips=d.personIds.map(id=>{const p=DB.people.find(x=>x.id===id);
+      return `<span class="chip">${esc(p?.name||"?")}<button data-di="${di}" data-rm="${id}">✕</button></span>`;}).join("");
+    return `<div class="card" data-di="${di}">
+      <p class="hint" style="margin:0 0 8px">“${esc(d.note.slice(0,140))}${d.note.length>140?"…":""}”</p>
+      <div class="fld"><label>Who</label><div class="chips">${chips}
+        <span class="chip" style="background:transparent"><input type="text" data-addperson="${di}" placeholder="+ add name" style="border:none;background:none;width:90px;padding:2px;font-size:14px"></span></div></div>
+      <div class="fld"><label>Who initiated</label><div class="seg" data-set="initiator" data-di="${di}">
+        ${Object.entries(INITS).map(([k,v])=>`<button data-v="${k}" class="${d.initiator===k?"on":""}">${v.label}</button>`).join("")}</div></div>
+      <div class="fld"><label>Richness</label><div class="seg" data-set="depth" data-di="${di}">
+        ${DEPTHS.map(v=>`<button data-v="${v.n}" class="${d.depth===v.n?"on":""}">${v.label}</button>`).join("")}</div></div>
+      <div class="fld"><label>Channel</label><div class="seg" data-set="channel" data-di="${di}">
+        ${Object.entries(CHANNELS).map(([k,v])=>`<button data-v="${k}" class="${d.channel===k?"on":""}">${v.label}</button>`).join("")}</div></div>
+      <div class="fld"><label>When</label><input type="date" data-date="${di}" value="${new Date(d.ts).toISOString().slice(0,10)}"></div>
+      <div style="display:flex;gap:8px">
+        <button class="btn" data-save="${di}">Save · +${Math.round(interactionPoints(d))} pts</button>
+        <button class="btn ghost small" data-discard="${di}">Discard</button></div>
+    </div>`;
+  }).join("");
+  // bindings
+  el.querySelectorAll(".seg[data-set]").forEach(seg=>{
+    seg.querySelectorAll("button").forEach(b=>b.addEventListener("click",()=>{
+      const d=drafts[+seg.dataset.di];
+      d[seg.dataset.set]=seg.dataset.set==="depth"?+b.dataset.v:b.dataset.v;
+      renderDrafts();
+    }));
+  });
+  el.querySelectorAll("[data-rm]").forEach(b=>b.addEventListener("click",()=>{
+    const d=drafts[+b.dataset.di]; d.personIds=d.personIds.filter(id=>id!==b.dataset.rm); renderDrafts();
+  }));
+  el.querySelectorAll("[data-addperson]").forEach(inp=>inp.addEventListener("keydown",e=>{
+    if(e.key!=="Enter") return;
+    const name=inp.value.trim(); if(!name) return;
+    const d=drafts[+inp.dataset.addperson];
+    let p=DB.people.find(x=>x.name.toLowerCase()===name.toLowerCase());
+    if(p){ d.personIds.push(p.id); renderDrafts(); }
+    else askTier(name, tier=>{ p={id:uid(),name,tier,aliases:[],added:Date.now()}; DB.people.push(p); d.personIds.push(p.id); saveDB(); renderDrafts(); });
+  }));
+  el.querySelectorAll("[data-date]").forEach(inp=>inp.addEventListener("change",()=>{
+    drafts[+inp.dataset.date].ts=new Date(inp.value+"T12:00").getTime();
+  }));
+  el.querySelectorAll("[data-save]").forEach(b=>b.addEventListener("click",()=>{
+    const d=drafts[+b.dataset.save];
+    if(!d.personIds.length){ alert("Tag at least one person (type a name and press return)."); return; }
+    DB.interactions.push({id:uid(),ts:d.ts,personIds:d.personIds,initiator:d.initiator,depth:d.depth,channel:d.channel,note:d.note});
+    // clear snoozes for these people
+    d.personIds.forEach(id=>{const p=DB.people.find(x=>x.id===id); if(p) delete p.snoozeUntil;});
+    drafts.splice(+b.dataset.save,1);
+    saveDB(); renderDrafts(); renderAll();
+    if(!drafts.length){ document.getElementById("logText").value=""; switchPage("home"); }
+  }));
+  el.querySelectorAll("[data-discard]").forEach(b=>b.addEventListener("click",()=>{ drafts.splice(+b.dataset.discard,1); renderDrafts(); }));
+}
+document.getElementById("parseBtn").addEventListener("click",()=>{
+  const text=document.getElementById("logText").value.trim();
+  if(!text) return;
+  drafts=parseNote(text); renderDrafts();
+  document.getElementById("drafts").scrollIntoView({behavior:"smooth"});
+});
+
+/* ---------- live dictation (webkitSpeechRecognition where supported) ---------- */
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+if(SR){
+  const btn=document.getElementById("liveMicBtn"); btn.style.display="block";
+  let rec=null, on=false;
+  btn.addEventListener("click",()=>{
+    if(on){ rec.stop(); return; }
+    rec=new SR(); rec.lang="en-GB"; rec.continuous=true; rec.interimResults=true;
+    const ta=document.getElementById("logText"); const base=ta.value?ta.value+" ":"";
+    rec.onresult=e=>{ let s=""; for(const r of e.results) s+=r[0].transcript; ta.value=base+s; };
+    rec.onend=()=>{ on=false; btn.classList.remove("mic-live"); btn.textContent="🎙 Live"; };
+    rec.onerror=()=>{ on=false; btn.classList.remove("mic-live"); btn.textContent="🎙 Live"; };
+    rec.start(); on=true; btn.classList.add("mic-live"); btn.textContent="■ Stop";
+  });
+}
+
+/* ---------- people / candidates ---------- */
+document.getElementById("newPersonBtn").addEventListener("click",()=>{
+  const inp=document.getElementById("newPersonName"); const name=inp.value.trim(); if(!name) return;
+  askTier(name, tier=>{ DB.people.push({id:uid(),name,tier,aliases:[],added:Date.now()}); inp.value=""; saveDB(); renderAll(); });
+});
+document.getElementById("candAdd").addEventListener("click",()=>{
+  const ta=document.getElementById("candPaste");
+  const names=ta.value.split(/\n/).map(s=>s.trim()).filter(Boolean);
+  const existing=new Set(DB.people.map(p=>p.name.toLowerCase()));
+  for(const n of names) if(!existing.has(n.toLowerCase()) && !DB.candidates.includes(n)) DB.candidates.push(n);
+  ta.value=""; saveDB(); renderAll();
+});
+document.getElementById("vcfFile").addEventListener("change",e=>{
+  const f=e.target.files[0]; if(!f) return;
+  f.text().then(txt=>{
+    const names=[...txt.matchAll(/^FN[^:]*:(.+)$/gm)].map(m=>m[1].trim()).filter(Boolean);
+    const existing=new Set(DB.people.map(p=>p.name.toLowerCase()));
+    let added=0;
+    for(const n of names) if(!existing.has(n.toLowerCase()) && !DB.candidates.includes(n)){ DB.candidates.push(n); added++; }
+    saveDB(); renderAll(); alert(`${added} contacts added to triage.`); switchPage("suggest");
+  });
+});
+
+/* ---------- backup ---------- */
+document.getElementById("exportBtn").addEventListener("click",()=>{
+  const blob=new Blob([JSON.stringify(DB,null,1)],{type:"application/json"});
+  const a=document.createElement("a"); a.href=URL.createObjectURL(blob);
+  a.download=`kith-backup-${new Date().toISOString().slice(0,10)}.json`; a.click();
+});
+document.getElementById("importFile").addEventListener("change",e=>{
+  const f=e.target.files[0]; if(!f) return;
+  f.text().then(txt=>{ try{ const d=JSON.parse(txt);
+    if(!d.people||!d.interactions) throw 0;
+    DB=d; saveDB(); renderAll(); alert("Backup imported."); }catch{ alert("That file doesn’t look like a Kith backup."); } });
+});
+document.getElementById("wipeBtn").addEventListener("click",()=>{
+  if(confirm("Erase everything? This cannot be undone (export a backup first)."))
+  { DB={people:[],interactions:[],candidates:[],scoreHistory:[]}; saveDB(); renderAll(); }
+});
+
+/* ---------- navigation ---------- */
+function switchPage(p){
+  document.querySelectorAll(".page").forEach(el=>el.classList.toggle("on",el.id==="page-"+p));
+  document.querySelectorAll("nav.tabs button").forEach(b=>b.classList.toggle("on",b.dataset.p===p));
+  window.scrollTo(0,0);
+  renderAll();
+}
+document.querySelectorAll("nav.tabs button").forEach(b=>b.addEventListener("click",()=>switchPage(b.dataset.p)));
+function renderAll(){ renderHome(); renderSuggest(); renderPeople(); }
+switchPage("home");
+</script>
+</body>
+</html>
