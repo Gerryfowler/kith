@@ -106,6 +106,7 @@ textarea{min-height:110px;resize:vertical;line-height:1.45}
 .status{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:700}
 .status i{width:9px;height:9px;border-radius:50%;display:inline-block}
 .spacer{flex:1}
+.xdel{background:none;color:var(--muted);font-size:15px;padding:6px 4px 6px 8px;flex:none}
 
 /* ---------- suggestion cards ---------- */
 .sugg{display:flex;flex-direction:column;gap:8px;padding:14px;border:1px solid var(--ring);border-radius:14px;
@@ -431,8 +432,9 @@ Each object:
  "channel":"inperson"|"video"|"call"|"message",
  "date":"YYYY-MM-DD",  // resolve 'yesterday', 'last night', 'this morning', weekday names, relative to today's date given
  "summary":"<12 words capturing the interaction",
- "facts":[{"person":"Name","fact":"short durable fact worth remembering before next contacting them","kind":"family"|"likes"|"plans"|"work"|"other"}]}
+ "facts":[{"person":"Name","fact":"short durable fact worth remembering before next contacting them","kind":"family"|"likes"|"plans"|"work"|"date"|"other"}]}
 Facts are the CRM layer: capture children's/partner's names, likes and dislikes, plans and upcoming events, job changes, things they're worried about or celebrating. Write each fact so it stands alone ("daughter Iris starting secondary school in September"). Only durable, useful facts — no trivia, no restating the interaction itself. Empty array if none.
+ALWAYS capture birthdays, anniversaries and other recurring personal dates as kind "date", converting relative mentions into the actual calendar date using today's date: "it was her birthday yesterday" on 19 August → {"fact":"birthday 18 August","kind":"date"}. A birthday is never trivia.
 Judge depth by substance, not length. Group chat/likes count as "message". If genuinely no interaction is described, return [].`;
 async function aiParse(text){
   const people=DB.people.map(p=>p.name+((p.aliases||[]).length?` (aka ${p.aliases.join(", ")})`:"")).join("; ")||"(none yet)";
@@ -537,7 +539,7 @@ function initials(name){ return name.split(/\s+/).slice(0,2).map(w=>w[0]||"").jo
 const AV_COLORS=["#cfe0f7","#f9ddc9","#d5eedd","#f3d9e5","#e6e0f7","#f7ecc8"];
 function avColor(name){ let h=0; for(const c of String(name)) h=(h*31+c.charCodeAt(0))>>>0; return AV_COLORS[h%AV_COLORS.length]; }
 function av(name){ return `<div class="avatar" style="background:${avColor(name)}">${esc(initials(name))}</div>`; }
-const KIND_EMOJI={family:"👨‍👩‍👧",likes:"❤️",plans:"📅",work:"💼",other:"📝"};
+const KIND_EMOJI={family:"👨‍👩‍👧",likes:"❤️",plans:"📅",work:"💼",date:"🎂",other:"📝"};
 function fmtAgo(ts){
   if(!ts) return "never";
   const d=Math.floor((Date.now()-ts)/DAY);
@@ -576,8 +578,13 @@ function renderHome(){
     return `<div class="person">${av(names)}
       <div><div class="nm">${esc(names||"(no one tagged)")}</div>
       <div class="meta">${DEPTHS[x.depth-1].label} · ${CHANNELS[x.channel].label} · ${INITS[x.initiator].label} · ${fmtAgo(x.ts)}</div></div>
-      <div class="spacer"></div><span class="badge">+${Math.round(interactionPoints(x))}</span></div>`;
+      <div class="spacer"></div><span class="badge">+${Math.round(interactionPoints(x))}</span><button class="xdel" data-x="${x.id}">✕</button></div>`;
   }).join(""):`<div class="empty">Your logged interactions appear here.</div>`;
+  rec.querySelectorAll("[data-x]").forEach(b=>b.addEventListener("click",()=>{
+    if(confirm("Delete this interaction? Scores recalculate immediately.")){
+      DB.interactions=DB.interactions.filter(i=>i.id!==b.dataset.x); saveDB(); renderAll();
+    }
+  }));
 }
 
 function suggestions(){
@@ -686,7 +693,8 @@ function personSheet(pid){
       <button class="btn small" id="factAddBtn">Add</button></div>
     <div class="sect" style="margin-top:12px">History</div>
     ${xs.length?xs.slice(0,20).map(x=>`<div class="person"><div><div class="nm" style="font-size:14px">${DEPTHS[x.depth-1].label} · ${CHANNELS[x.channel].label}</div>
-      <div class="meta">${INITS[x.initiator].label} · ${fmtAgo(x.ts)}${x.note?` — ${esc(x.note.slice(0,90))}`:""}</div></div></div>`).join("")
+      <div class="meta">${INITS[x.initiator].label} · ${fmtAgo(x.ts)}${x.note?` — ${esc(x.note.slice(0,90))}`:""}</div></div>
+      <div class="spacer"></div><button class="xdel" data-xdel="${x.id}">✕</button></div>`).join("")
       :`<div class="empty">No interactions logged yet.</div>`}
     <div style="display:flex;gap:8px;margin-top:12px">
       <button class="btn small" id="dlgClose">Done</button>
@@ -701,6 +709,12 @@ function personSheet(pid){
     p.facts=p.facts||[]; p.facts.push({f:v,kind:"other",ts:Date.now()});
     saveDB(); dlg.close(); dlg.remove(); personSheet(pid);
   });
+  dlg.querySelectorAll("[data-xdel]").forEach(b=>b.addEventListener("click",()=>{
+    if(confirm("Delete this interaction? Scores recalculate immediately.")){
+      DB.interactions=DB.interactions.filter(i=>i.id!==b.dataset.xdel);
+      saveDB(); renderAll(); dlg.close(); dlg.remove(); personSheet(pid);
+    }
+  }));
   dlg.querySelector("#dlgClose").addEventListener("click",()=>{ dlg.close(); dlg.remove(); });
   dlg.querySelector("#dlgDel").addEventListener("click",()=>{ if(confirm(`Remove ${p.name}? Their logged interactions stay but untagged.`)){ DB.people=DB.people.filter(x=>x.id!==pid); saveDB(); dlg.close(); dlg.remove(); renderAll(); }});
 }
