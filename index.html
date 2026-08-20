@@ -749,6 +749,11 @@ button{font-family:inherit;border:none;cursor:pointer}
 .btn{background:var(--accent);color:#fff;font-size:16px;font-weight:700;border-radius:14px;padding:14px 18px;width:100%}
 .btn.secondary{background:transparent;color:var(--accent);border:1.5px solid var(--accent)}
 .btn.small{width:auto;padding:8px 14px;font-size:14px;border-radius:10px}
+a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box}
+.goal-dots{display:flex;gap:10px;margin:10px 0 4px}
+.goal-dots i{width:26px;height:26px;border-radius:50%;border:2.5px solid var(--accent);display:inline-flex;align-items:center;justify-content:center;font-size:14px;color:#fff;font-style:normal}
+.goal-dots i.on{background:var(--accent)}
+.streak{font-size:13px;color:var(--ink-2);font-weight:600}
 .btn.ghost{background:transparent;color:var(--ink-2);border:1px solid var(--ring);font-weight:600}
 .btn.danger{background:transparent;color:var(--critical);border:1px solid var(--critical)}
 textarea,input[type=text],input[type=date],input[type=search]{
@@ -824,6 +829,8 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
         <div style="flex:1;max-width:220px" id="sparkWrap"></div>
       </div>
     </div>
+    <div class="card t-butter" id="goalCard"></div>
+    <div id="bdayStrip"></div>
     <div class="card">
       <div class="lbl" style="font-size:12px;color:var(--ink-2);font-weight:600;text-transform:uppercase;letter-spacing:.05em">Your circles — in rhythm right now</div>
       <div style="display:flex;align-items:center;gap:16px;margin-top:8px">
@@ -945,6 +952,11 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
         <button class="btn small" id="apiSave">Save</button>
       </div>
       <div class="hint" id="apiStatus"></div>
+    </div>
+    <div class="card">
+      <h2 style="font-size:17px">Birthdays → your Calendar</h2>
+      <p class="hint">Every birthday Kith knows (🎂 facts) can become a yearly event in your iPhone Calendar with a 9am reminder — native alerts without Kith needing notification permissions. Open the downloaded file and tap Add All.</p>
+      <button class="btn secondary" id="icsBtn" style="margin-top:10px">Export birthdays (.ics)</button>
     </div>
     <div class="card">
       <h2 style="font-size:17px">Places</h2>
@@ -1418,6 +1430,72 @@ function editInteraction(id){
   dlg.querySelector("#ecancel").addEventListener("click",()=>{ dlg.close(); dlg.remove(); });
 }
 
+/* ---------- weekly goal & streak ---------- */
+const WEEK_GOAL=3; // meaningful (substantive or deep) conversations per week
+function weekStart(ts){ const d=new Date(ts); const dow=(d.getDay()+6)%7; d.setHours(0,0,0,0); return d.getTime()-dow*DAY; }
+function meaningfulCount(ws){ return DB.interactions.filter(x=>x.ts>=ws && x.ts<ws+7*DAY && x.depth>=3).length; }
+function streakData(){
+  const nowWs=weekStart(Date.now());
+  const cur=meaningfulCount(nowWs);
+  let past=0, ws=nowWs-7*DAY;
+  while(meaningfulCount(ws)>=WEEK_GOAL && past<520){ past++; ws-=7*DAY; }
+  return {cur, done:cur>=WEEK_GOAL, streak:past+(cur>=WEEK_GOAL?1:0)};
+}
+
+/* ---------- birthdays ---------- */
+const MONTHS={jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,dec:11};
+function birthdayOf(p){
+  for(const f of (p.facts||[])){
+    if(f.kind!=="date" || !/birthday/i.test(f.f)) continue;
+    let m=f.f.match(/(\d{1,2})(?:st|nd|rd|th)?(?:\s+of)?\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*/i);
+    if(m) return {day:+m[1], mon:MONTHS[m[2].slice(0,3).toLowerCase()]};
+    m=f.f.match(/(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+(\d{1,2})(?:st|nd|rd|th)?/i);
+    if(m) return {day:+m[2], mon:MONTHS[m[1].slice(0,3).toLowerCase()]};
+  }
+  return null;
+}
+function upcomingBirthdays(withinDays){
+  const now=new Date(); const today=new Date(now.getFullYear(),now.getMonth(),now.getDate());
+  const out=[];
+  for(const p of DB.people){
+    if(p.tier==="notnow") continue;
+    const b=birthdayOf(p); if(!b) continue;
+    let next=new Date(now.getFullYear(),b.mon,b.day);
+    if(next<today) next=new Date(now.getFullYear()+1,b.mon,b.day);
+    const days=Math.round((next-today)/DAY);
+    if(days<=withinDays) out.push({p,next,days,b});
+  }
+  return out.sort((a,b)=>a.days-b.days);
+}
+function allBirthdays(){
+  return DB.people.map(p=>({p,b:birthdayOf(p)})).filter(x=>x.b && x.p.tier!=="notnow");
+}
+function exportICS(){
+  const list=allBirthdays();
+  if(!list.length){ alert("No birthdays stored yet — mention them in your notes (\"Tom's birthday is 3 March\") or add a 🎂 fact on a person's profile."); return; }
+  const now=new Date(), pad=n=>String(n).padStart(2,"0");
+  let ics="BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Kith//Birthdays//EN\r\nCALSCALE:GREGORIAN\r\n";
+  for(const {p,b} of list){
+    let next=new Date(now.getFullYear(),b.mon,b.day);
+    if(next<new Date(now.getFullYear(),now.getMonth(),now.getDate())) next=new Date(now.getFullYear()+1,b.mon,b.day);
+    const d=`${next.getFullYear()}${pad(b.mon+1)}${pad(b.day)}`;
+    const name=p.name.replace(/[,;\\]/g," ");
+    ics+=`BEGIN:VEVENT\r\nUID:kith-bday-${p.id}@kith\r\nDTSTART;VALUE=DATE:${d}\r\nRRULE:FREQ=YEARLY\r\nSUMMARY:🎂 ${name}'s birthday\r\nDESCRIPTION:From Kith — reach out!\r\nBEGIN:VALARM\r\nTRIGGER:PT9H\r\nACTION:DISPLAY\r\nDESCRIPTION:🎂 ${name}'s birthday today\r\nEND:VALARM\r\nEND:VEVENT\r\n`;
+  }
+  ics+="END:VCALENDAR\r\n";
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(new Blob([ics],{type:"text/calendar"}));
+  a.download="kith-birthdays.ics"; a.click();
+}
+
+/* ---------- one-tap contact actions ---------- */
+function telDigits(t){ return String(t||"").replace(/[^\d+]/g,""); }
+function contactBtns(p, small){
+  const t=telDigits(p.tel); if(!t) return "";
+  const wa=t.startsWith("+")?`<a class="btn ghost small" href="https://wa.me/${t.slice(1)}" target="_blank" rel="noopener">🟢</a>`:"";
+  return `<a class="btn small" href="tel:${t}">📞</a><a class="btn ghost small" href="sms:${t}">💬</a>${wa}`;
+}
+
 /* ---------- rendering ---------- */
 function initials(name){ return name.split(/\s+/).slice(0,2).map(w=>w[0]||"").join("").toUpperCase(); }
 const AV_COLORS=["#cfe0f7","#f9ddc9","#d5eedd","#f3d9e5","#e6e0f7","#f7ecc8"];
@@ -1434,6 +1512,21 @@ function fmtAgo(ts){
 
 function renderHome(){
   const now=Date.now();
+  // weekly goal & streak
+  const g=streakData();
+  const dots=Array.from({length:WEEK_GOAL},(_,i)=>`<i class="${i<g.cur?"on":""}">${i<g.cur?"✓":""}</i>`).join("");
+  document.getElementById("goalCard").innerHTML=`
+    <div class="lbl" style="font-size:12px;color:var(--ink-2);font-weight:600;text-transform:uppercase;letter-spacing:.05em">This week — meaningful conversations</div>
+    <div class="goal-dots">${dots}</div>
+    <div class="streak">${g.done
+      ? `✓ Week closed! Streak: <b>${g.streak} week${g.streak===1?"":"s"}</b> 🔥`
+      : `${g.cur} of ${WEEK_GOAL} — ${WEEK_GOAL-g.cur} more substantive or deep conversation${WEEK_GOAL-g.cur===1?"":"s"} to keep the streak${g.streak?` (currently ${g.streak} 🔥)`:""}`}</div>`;
+  // birthday radar
+  const bd=upcomingBirthdays(14);
+  document.getElementById("bdayStrip").innerHTML=bd.length?`<div class="card" style="background:var(--tint-rose);border-color:transparent">
+    ${bd.map(x=>`<div class="why" data-bpid="${x.p.id}" style="cursor:pointer">🎂 <b>${esc(x.p.name)}</b> — ${x.days===0?"<b>today!</b>":x.days===1?"<b>tomorrow</b>":x.next.toLocaleDateString("en-GB",{weekday:"long",day:"numeric",month:"short"})+` (in ${x.days} days)`}${x.days<=3?" — get in first":""}</div>`).join("")}
+  </div>`:"";
+  document.querySelectorAll("[data-bpid]").forEach(el=>el.addEventListener("click",()=>personSheet(el.dataset.bpid)));
   const score=connectionScore(now), prev=connectionScore(now-7*DAY);
   document.getElementById("scoreVal").textContent=DB.interactions.length?score:"–";
   const dEl=document.getElementById("scoreDelta");
@@ -1499,9 +1592,10 @@ function suggCard(u, compact){
     <div class="why">Last contact <b>${u.last?fmtAgo(u.last):"never logged"}</b>${t.cadence?` — your rhythm for this circle is every ${t.cadence} days`:""}.</div>
     ${(u.p.facts&&u.p.facts.length)?`<div class="why">💡 ${u.p.facts.slice(-2).map(f=>esc(f.f)).join(" · ")}</div>`:""}
     <div class="row">
-      <button class="btn small" data-act="log">I reached out</button>
-      <button class="btn ghost small" data-act="snooze">Snooze 1w</button>
-      ${compact?"":`<button class="btn ghost small" data-act="tier">Change circle</button>`}
+      ${contactBtns(u.p)}
+      <button class="btn ${u.p.tel?"ghost ":""}small" data-act="log">✓ Log it</button>
+      <button class="btn ghost small" data-act="snooze">Snooze</button>
+      ${compact?"":`<button class="btn ghost small" data-act="tier">Circle</button>`}
     </div></div>`;
 }
 function bindSuggButtons(root){
@@ -1538,7 +1632,7 @@ function renderSuggest(){
     card.querySelectorAll("button").forEach(b=>b.addEventListener("click",()=>{
       const cand=DB.candidates.find(c=>c.name===name);
       DB.candidates=DB.candidates.filter(c=>c.name!==name);
-      if(b.dataset.tier!=="skip") DB.people.push({id:uid(),name,tier:b.dataset.tier,aliases:[],added:Date.now(),addr:cand?.addr,loc:cand?.loc});
+      if(b.dataset.tier!=="skip") DB.people.push({id:uid(),name,tier:b.dataset.tier,aliases:[],added:Date.now(),addr:cand?.addr,loc:cand?.loc,tel:cand?.tel});
       saveDB(); renderAll();
     }));
   });
@@ -1571,6 +1665,10 @@ function personSheet(pid){
   const dlg=document.createElement("dialog");
   dlg.innerHTML=`<h2 style="font-size:18px;margin-bottom:4px">${esc(p.name)}</h2>
     <div class="fld"><label>Circle</label><div class="seg">${Object.entries(TIERS).map(([k,t])=>`<button data-tier="${k}" class="${p.tier===k?"on":""}">${t.label}</button>`).join("")}</div></div>
+    <div class="fld"><label>Phone</label><div style="display:flex;gap:8px;align-items:center">
+      <input type="tel" id="ptel" value="${esc(p.tel||"")}" placeholder="+44 7…">
+      <button class="btn small" id="ptelSave">Save</button></div>
+      ${p.tel?`<div style="display:flex;gap:8px;margin-top:8px">${contactBtns(p)}</div>`:`<div class="hint">Add a number to get one-tap Call / Text buttons here and on suggestions.</div>`}</div>
     <div class="fld"><label>Address / area</label><div style="display:flex;gap:8px">
       <input type="text" id="paddr" value="${esc(p.addr||"")}" placeholder="e.g. Clapham SW4, or Zurich">
       <button class="btn small" id="paddrSave">Save</button></div>
@@ -1595,6 +1693,10 @@ function personSheet(pid){
   dlg.querySelectorAll("[data-fdel]").forEach(b=>b.addEventListener("click",()=>{
     p.facts.splice(+b.dataset.fdel,1); saveDB(); dlg.close(); dlg.remove(); personSheet(pid);
   }));
+  dlg.querySelector("#ptelSave").addEventListener("click",()=>{
+    p.tel=dlg.querySelector("#ptel").value.trim()||undefined;
+    saveDB(); dlg.close(); dlg.remove(); personSheet(pid);
+  });
   dlg.querySelector("#paddrSave").addEventListener("click",async ()=>{
     const v=dlg.querySelector("#paddr").value.trim();
     const st=dlg.querySelector("#paddrStatus");
@@ -1793,7 +1895,7 @@ function addCandidates(items){
   const pending=new Set(DB.candidates.map(c=>c.name.toLowerCase()));
   let added=0;
   for(const raw of items){
-    const it=typeof raw==="string"?{name:raw.trim()}:{name:String(raw.name||"").trim(),addr:raw.addr?String(raw.addr).trim():undefined};
+    const it=typeof raw==="string"?{name:raw.trim()}:{name:String(raw.name||"").trim(),addr:raw.addr?String(raw.addr).trim():undefined,tel:raw.tel?String(raw.tel).trim():undefined};
     if(it.name && !existing.has(it.name.toLowerCase()) && !pending.has(it.name.toLowerCase())){
       DB.candidates.push(it); pending.add(it.name.toLowerCase()); added++; }
   }
@@ -1813,13 +1915,16 @@ document.getElementById("vcfFile").addEventListener("change",e=>{
       let addr;
       if(adr){ const fld=adr[2].split(";").map(s=>s.replace(/\\,/g,",").trim());
         addr=[fld[3],fld[5]].filter(Boolean).join(" ")||[fld[2],fld[4],fld[6]].filter(Boolean).join(", "); }
-      return {name:fn.trim(), addr:addr||undefined};
+      const tels=[...bk.matchAll(/^(?:item\d+\.)?TEL([^:]*):(.+)$/gm)];
+      const tel=(tels.find(m=>/CELL|MOBILE|IPHONE/i.test(m[1]))||tels[0])?.[2].trim();
+      return {name:fn.trim(), addr:addr||undefined, tel:tel||undefined};
     }).filter(Boolean);
     const added=addCandidates(items);
     alert(`${added} contacts added to triage${items.some(i=>i.addr)?" (addresses included)":""}.`); switchPage("suggest");
   });
 });
 document.getElementById("vcfBtn2").addEventListener("click",()=>document.getElementById("vcfFile").click());
+document.getElementById("icsBtn").addEventListener("click",exportICS);
 document.getElementById("geoAllBtn").addEventListener("click",async ()=>{
   const all=[...DB.people,...DB.candidates];
   const withAddr=all.filter(x=>x.addr);
@@ -1845,7 +1950,9 @@ if(navigator.contacts && navigator.contacts.select){
   b.addEventListener("click",async ()=>{
     try{
       let props=["name"];
-      try{ const sup=await navigator.contacts.getProperties(); if(sup.includes("address")) props.push("address"); }catch(e){}
+      try{ const sup=await navigator.contacts.getProperties();
+        if(sup.includes("address")) props.push("address");
+        if(sup.includes("tel")) props.push("tel"); }catch(e){}
       const cs=await navigator.contacts.select(props,{multiple:true});
       const items=cs.map(c=>{ const name=Array.isArray(c.name)?c.name[0]:c.name;
         let addr;
@@ -1858,7 +1965,8 @@ if(navigator.contacts && navigator.contacts.select){
                .filter(Boolean).join(" ").replace(/\s+/g," ").trim()||undefined;
           if(!addr && typeof a.toJSON==="function"){ try{ const j=a.toJSON(); addr=[j.city,j.postalCode].filter(Boolean).join(" ")||undefined; }catch(e){} }
         }
-        return name?{name,addr}:null; }).filter(Boolean);
+        const tel=Array.isArray(c.tel)?c.tel[0]:c.tel;
+        return name?{name,addr,tel}:null; }).filter(Boolean);
       const added=addCandidates(items);
       if(added){
         const withAddr=items.filter(i=>i.addr).length;
