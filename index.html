@@ -1037,7 +1037,11 @@ function personBalance(p, asOf){
 function healthOfP(p, asOf){ // status = time since last contact vs the circle's rhythm
   const t=TIERS[p.tier]||TIERS.warm;
   const l=lastContact(p,asOf);
-  if(!l) return {k:"critical",label:"no contact yet",color:"var(--critical)"};
+  if(!l){
+    const age=p.added?((asOf-p.added)/DAY):999;
+    if(age<=(t.cadence||60)) return {k:"new",label:"new",color:"var(--accent)"}; // grace period
+    return {k:"critical",label:"no contact yet",color:"var(--critical)"};
+  }
   const r=((asOf-l)/DAY)/(t.cadence||60);
   if(r<=0.9) return {k:"good",label:"healthy",color:"var(--good)"};      // inner: quiet until ~day 6
   if(r<=1.8) return {k:"warn",label:"fading",color:"var(--warn)"};
@@ -1193,6 +1197,7 @@ function havKm(a,b){ const R=6371,t=x=>x*Math.PI/180;
   const h=Math.sin(t(b.lat-a.lat)/2)**2+Math.cos(t(a.lat))*Math.cos(t(b.lat))*Math.sin(t(b.lon-a.lon)/2)**2;
   return 2*R*Math.asin(Math.sqrt(h)); }
 function isToday(ts){ return new Date(ts).toDateString()===new Date().toDateString(); }
+function localDate(ts){ return new Date(ts).toLocaleDateString("en-CA"); } // YYYY-MM-DD in local time
 
 function lev(a,b){
   const m=a.length,n=b.length; if(!m) return n; if(!n) return m;
@@ -1203,14 +1208,17 @@ function lev(a,b){
   return prev[n];
 }
 function fuzzyFind(raw){
-  const n=String(raw).toLowerCase(); let best=null,bd=9;
+  const n=String(raw).toLowerCase(); let best=null,bd=9,tie=false;
   for(const p of DB.people){
     const cands=[p.name.toLowerCase(),nameTokens(p.name)[0],...(p.aliases||[]).map(a=>a.toLowerCase())];
     for(const c of cands){ if(!c) continue;
       const d=lev(n,c), lim=c.length<=4?1:2;
-      if(d<=lim && d<bd){ bd=d; best=p; } }
+      if(d>lim) continue;
+      if(d<bd){ bd=d; best=p; tie=false; }
+      else if(d===bd && best && p.id!==best.id) tie=true;
+    }
   }
-  return best;
+  return tie?null:best; // ambiguous between two different people → don't guess
 }
 async function aiParse(text){
   const people=DB.people.map(p=>p.name+((p.aliases||[]).length?` (aka ${p.aliases.join(", ")})`:"")).join("; ")||"(none yet)";
@@ -1369,7 +1377,7 @@ function editInteraction(id){
     <div class="fld"><label>Where</label><div style="display:flex;gap:8px">
       <input type="text" id="ewhere" value="${esc(x.place||"")}" placeholder="place (optional)">
       <button class="btn ghost small" id="egps">📍</button></div></div>
-    <div class="fld"><label>When</label><input type="date" id="edate" value="${new Date(x.ts).toISOString().slice(0,10)}"></div>
+    <div class="fld"><label>When</label><input type="date" id="edate" value="${localDate(x.ts)}"></div>
     <div style="display:flex;gap:8px">
       <button class="btn small" id="esave">Save changes</button>
       <button class="btn ghost small" id="ecancel">Cancel</button></div>`;
@@ -1451,7 +1459,7 @@ function renderHome(){
   const rec=document.getElementById("homeRecent");
   const xs=[...DB.interactions].sort((a,b)=>b.ts-a.ts).slice(0,6);
   rec.innerHTML=xs.length?xs.map(x=>{
-    const names=x.personIds.map(id=>DB.people.find(p=>p.id===id)?.name||"?").join(", ");
+    const names=x.personIds.map(id=>DB.people.find(p=>p.id===id)?.name||"(removed)").join(", ");
     return `<div class="person">${av(names)}
       <div><div class="nm">${esc(names||"(no one tagged)")}</div>
       <div class="meta">${DEPTHS[x.depth-1].label} · ${CHANNELS[x.channel].label} · ${INITS[x.initiator].label} · ${fmtAgo(x.ts)}${x.place?` · 📍 ${esc(x.place)}`:""}</div></div>
@@ -1471,7 +1479,7 @@ function suggestions(){
     const t=TIERS[p.tier]; if(!t||!t.cadence) continue;
     if(p.snoozeUntil && p.snoozeUntil>now) continue;
     const last=lastContact(p,now);
-    const days=last?(now-last)/DAY:999;
+    const days=last?(now-last)/DAY:(p.added?(now-p.added)/DAY:999); // new people get a grace period
     const overdue=days/t.cadence;
     if(overdue<1) continue;
     out.push({p, last, days:Math.round(days), urgency:overdue*t.weight});
@@ -1648,7 +1656,7 @@ function renderDrafts(){
       <div class="fld"><label>Where</label><div style="display:flex;gap:8px">
         <input type="text" data-where="${di}" value="${esc(d.place||"")}" placeholder="place (optional)">
         <button class="btn ghost small" data-gps="${di}" title="Use my location">📍</button></div></div>
-      <div class="fld"><label>When</label><input type="date" data-date="${di}" value="${new Date(d.ts).toISOString().slice(0,10)}"></div>
+      <div class="fld"><label>When</label><input type="date" data-date="${di}" value="${localDate(d.ts)}"></div>
       <div style="display:flex;gap:8px">
         <button class="btn" data-save="${di}">Save · +${Math.round(interactionPoints(d))} pts${d.personIds.length>1?" each":""}</button>
         <button class="btn ghost small" data-discard="${di}">Discard</button></div>
@@ -1878,7 +1886,7 @@ document.getElementById("importFile").addEventListener("change",e=>{
   const f=e.target.files[0]; if(!f) return;
   f.text().then(txt=>{ try{ const d=JSON.parse(txt);
     if(!d.people||!d.interactions) throw 0;
-    DB=d; saveDB(); renderAll(); alert("Backup imported."); }catch{ alert("That file doesn’t look like a Kith backup."); } });
+    DB=migrate(d); saveDB(); renderAll(); alert("Backup imported."); }catch{ alert("That file doesn’t look like a Kith backup."); } });
 });
 document.getElementById("wipeBtn").addEventListener("click",()=>{
   if(confirm("Erase everything? This cannot be undone (export a backup first)."))
@@ -1972,8 +1980,8 @@ function renderNetwork(){
     gEl.innerHTML=svg;
     gEl.querySelectorAll(".netnode").forEach(n=>n.addEventListener("click",()=>personSheet(n.dataset.pid)));
 
-    // groups
-    const groups=findGroups(nodes,pairs);
+    // groups (a real group has met together at least twice)
+    const groups=findGroups(nodes,pairs).filter(g=>groupMeetCount(g)>=2);
     const now=Date.now();
     document.getElementById("netGroups").innerHTML=groups.length?groups.map((g,gi)=>{
       const members=[...g].map(id=>DB.people.find(p=>p.id===id)).filter(Boolean)
@@ -2012,9 +2020,10 @@ function renderNetwork(){
 
   // place clusters & venues
   const clusters={};
+  const townOf=a=>a.replace(/\b[A-Z]{1,2}\d[A-Z\d]?(\s*\d[A-Z]{2})?\b/gi,"").replace(/[0-9].*$/,"").replace(/[,\s]+$/,"").trim()||a;
   for(const p of DB.people){ if(!p.addr||p.tier==="notnow") continue;
-    const key=(p.addr.replace(/[0-9].*$/,"").trim()||p.addr).toLowerCase();
-    (clusters[key]=clusters[key]||{label:p.addr.replace(/[0-9].*$/,"").trim()||p.addr,ppl:[]}).ppl.push(p); }
+    const label=townOf(p.addr);
+    (clusters[label.toLowerCase()]=clusters[label.toLowerCase()]||{label,ppl:[]}).ppl.push(p); }
   const cEl=document.getElementById("placeClusters");
   const cRows=Object.values(clusters).filter(c=>c.ppl.length>=1).sort((a,b)=>b.ppl.length-a.ppl.length).slice(0,8);
   cEl.innerHTML=cRows.length?`<div class="card">${cRows.map(c=>{
@@ -2073,7 +2082,7 @@ function renderMap(){
   }
   kmarkers.forEach(m=>m.remove()); kmarkers=[];
   const now=Date.now();
-  const colorMap={good:"#0ca30c",warn:"#fab219",serious:"#ec835a",critical:"#d03b3b"};
+  const colorMap={good:"#0ca30c",warn:"#fab219",serious:"#ec835a",critical:"#d03b3b",new:"#2a78d6"};
   for(const p of pts){
     const h=healthOfP(p,now);
     const m=L.circleMarker([p.loc.lat,p.loc.lon],
