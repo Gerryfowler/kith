@@ -686,7 +686,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
   --page:#faf6ee; --surface:#ffffff; --ink:#33302b; --ink-2:#615c52; --muted:#948f85;
   --grid:#efeade; --baseline:#d8d2c6; --ring:rgba(70,55,25,.09);
   --accent:#2a78d6; --accent-soft:#dbe7fa;
-  --d1:#86b6ef; --d2:#3987e5; --d3:#1c5cab; --d4:#0d366b;       /* ordinal depth ramp */
+  --d1:#86b6ef; --d2:#2a78d6; --d3:#0d366b;       /* ordinal depth ramp (3 levels) */
   --good:#0ca30c; --warn:#fab219; --serious:#ec835a; --critical:#d03b3b;
   --up:#006300;
   --tint-lav:#eef0fc; --tint-mint:#e7f4ec; --tint-peach:#fdeee2; --tint-sky:#e9f2fc; --tint-rose:#fbeaf0; --tint-butter:#faf2d7;
@@ -698,7 +698,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
     --page:#211e19; --surface:#2b2722; --ink:#f5f1e8; --ink-2:#cbc4b6; --muted:#98917f;
     --grid:#3a352c; --baseline:#4a4438; --ring:rgba(255,245,225,.09);
     --accent:#5a99ea; --accent-soft:#28425f;
-    --d1:#b7d3f6; --d2:#6da7ec; --d3:#2a78d6; --d4:#1c5cab;
+    --d1:#b7d3f6; --d2:#3987e5; --d3:#1c5cab;
     --up:#0ca30c;
     --tint-lav:#333748; --tint-mint:#2c3d33; --tint-peach:#463527; --tint-sky:#2b3a4a; --tint-rose:#43303a; --tint-butter:#403a26;
     --ring1:#3987e5; --ring2:#d95926; --ring3:#199e70;
@@ -840,7 +840,7 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
     </div>
     <div class="tile-row">
       <div class="card tile t-mint"><div class="lbl">Initiation</div><div class="val" id="initVal">–</div><div class="sub">of interactions started by you (30d)</div></div>
-      <div class="card tile t-peach"><div class="lbl">Depth</div><div class="val" id="depthVal">–</div><div class="sub">substantive or deep (30d)</div></div>
+      <div class="card tile t-peach"><div class="lbl">Depth</div><div class="val" id="depthVal">–</div><div class="sub">substantive (30d)</div></div>
     </div>
     <div class="card">
       <div class="lbl" style="font-size:12px;color:var(--ink-2);font-weight:600;text-transform:uppercase;letter-spacing:.05em">Depth mix — last 30 days</div>
@@ -858,7 +858,7 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
     <div class="card">
       <h2 style="font-size:17px;margin-bottom:6px">Describe your interactions</h2>
       <p class="hint" style="margin:0 0 10px">Tap the box, then use the <b>microphone key on your keyboard</b> to dictate — or type. Say who, who initiated, and how rich it was.<br>
-      <i>“Had a deep chat over dinner with Sarah — she suggested it. Quick logistics call with Tom, I rang him.”</i></p>
+      <i>“Proper heart-to-heart over dinner with Sarah — she suggested it. Quick logistics call with Tom, I rang him.”</i></p>
       <textarea id="logText" placeholder="Coffee with James this morning, I organised it, proper catch-up about his new role…"></textarea>
       <div style="display:flex;gap:8px;margin-top:10px">
         <button class="btn" id="parseBtn">Review &amp; score</button>
@@ -966,7 +966,7 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
     </div>
     <div class="card">
       <h2 style="font-size:17px">How scoring works</h2>
-      <p class="hint">Each interaction earns points: <b>channel</b> (in-person 10 · video 6 · call 5 · message 2) × <b>depth</b> (transactional ×1 · social ×2 · substantive ×4 · deep ×8) × <b>initiation</b> (you ×1.5 · mutual ×1.2 · them ×1). Every person’s balance then <b>decays daily</b> — faster for closer circles — so the score genuinely goes backwards when you go quiet. The headline score blends circle coverage (50%), depth mix (20%), initiation (15%) and volume (15%).</p>
+      <p class="hint">Each interaction earns points: <b>channel</b> (in-person 10 · video 6 · call 5 · message 2) × <b>richness</b> (logistical ×1 · friendly ×2.5 · substantive ×5) × <b>initiation</b> (you ×1.5 · mutual ×1.2 · them ×1). Every person’s balance then <b>decays daily</b> — faster for closer circles — so the score genuinely goes backwards when you go quiet. The headline score blends circle coverage (50%), depth mix (20%), initiation (15%) and volume (15%).</p>
     </div>
     <div class="card">
       <button class="btn danger" id="wipeBtn">Erase all data</button>
@@ -996,6 +996,7 @@ let memStore=null;
 function migrate(db){
   db.candidates=(db.candidates||[]).map(c=>typeof c==="string"?{name:c}:c);
   db.geo=db.geo||{};
+  (db.interactions||[]).forEach(x=>{ if(x.depth>3) x.depth=3; }); // old "Deep" folds into Substantive
   return db;
 }
 function loadDB(){
@@ -1018,10 +1019,9 @@ const TIERS={
 };
 const CHANNELS={inperson:{label:"In person",base:10},video:{label:"Video",base:6},call:{label:"Call",base:5},message:{label:"Message",base:2}};
 const DEPTHS=[
-  {n:1,label:"Transactional",mult:1},
-  {n:2,label:"Social",mult:2},
-  {n:3,label:"Substantive",mult:4},
-  {n:4,label:"Deep",mult:8}
+  {n:1,label:"Logistical",mult:1},
+  {n:2,label:"Friendly",mult:2.5},
+  {n:3,label:"Substantive",mult:5}
 ];
 const INITS={me:{label:"I did",mult:1.5},mutual:{label:"Planned",mult:1.2},them:{label:"They did",mult:1.0}};
 const DAY=86400000;
@@ -1108,9 +1108,8 @@ function findPeopleInText(text){
   return hits;
 }
 const DEPTH_CUES=[
-  {re:/\b(deep|meaningful|heart[- ]to[- ]heart|opened up|emotional|vulnerab|really connected|profound)\b/i, d:4},
-  {re:/\b(proper|substantive|long (chat|talk|call)|good (long )?(chat|talk|conversation)|advice|talked (about|through)|discussed|career|worri|problem)\b/i, d:3},
-  {re:/\b(catch[- ]?up|caught up|social|drinks|coffee|banter|chat|lunch|dinner|walk)\b/i, d:2},
+  {re:/\b(deep|meaningful|heart[- ]to[- ]heart|opened up|emotional|vulnerab|really connected|profound|proper|substantive|long (chat|talk|call)|good (long )?(chat|talk|conversation)|advice|talked (about|through)|discussed|career|worri|problem)\b/i, d:3},
+  {re:/\b(catch[- ]?up|caught up|social|friendly|drinks|coffee|banter|chat|lunch|dinner|walk)\b/i, d:2},
   {re:/\b(logistic|quick|admin|schedul|transactional|arrang|confirm|brief)\b/i, d:1}
 ];
 const INIT_ME=/\b(i (called|rang|phoned|messaged|texted|emailed|invited|organised|organized|arranged|reached out|suggested|set (it )?up)|my (idea|suggestion|invite)|i initiated)\b/i;
@@ -1171,7 +1170,7 @@ Each object:
 {"people":[names matched EXACTLY from the known-people list],
  "new_people":[names mentioned but NOT in the known list],
  "initiator":"me"|"them"|"mutual",  // from the note-writer's perspective; "mutual" for planned/recurring/unclear
- "depth":1|2|3|4,  // 1=transactional/logistics/admin; 2=social/light catch-up/banter; 3=substantive (real topics, advice, work or life discussed properly); 4=deep (vulnerability, emotions, meaning, hard truths)
+ "depth":1|2|3,  // 1=logistical (admin, scheduling, transactions); 2=friendly (light catch-up, banter, pleasant social contact); 3=substantive (real topics discussed properly — advice, plans, worries, emotions, meaning)
  "channel":"inperson"|"video"|"call"|"message",
  "date":"YYYY-MM-DD",  // resolve 'yesterday', 'last night', 'this morning', weekday names, relative to today's date given
  "place":"place mentioned in the note (restaurant, area, town) or empty string",
@@ -1261,7 +1260,7 @@ async function aiParse(text){
     return {id:uid(), ai:true, note:o.summary||text.slice(0,120), personIds, pendingNames, facts,
       place:String(o.place||"").slice(0,80),
       initiator:INITS[o.initiator]?o.initiator:"mutual",
-      depth:Math.min(4,Math.max(1,+o.depth||2)),
+      depth:Math.min(3,Math.max(1,+o.depth||2)),
       channel:CHANNELS[o.channel]?o.channel:"inperson", ts};
   });
 }
@@ -1304,11 +1303,11 @@ function sparkline(el, series){
 
 function depthMixBar(el, legendEl){
   const s=windowStats(Date.now(),30);
-  const counts=[0,0,0,0];
-  s.xs.forEach(x=>counts[x.depth-1]++);
+  const counts=[0,0,0];
+  s.xs.forEach(x=>counts[Math.min(3,x.depth)-1]++);
   const total=counts.reduce((a,b)=>a+b,0);
   if(!total){ el.innerHTML=`<div class="empty" style="padding:10px">No interactions logged in the last 30 days yet.</div>`; legendEl.innerHTML=""; return; }
-  const colors=["var(--d1)","var(--d2)","var(--d3)","var(--d4)"];
+  const colors=["var(--d1)","var(--d2)","var(--d3)"];
   const W=600,H=34;
   let acc=0, segs="";
   const segData=[];
@@ -1320,7 +1319,7 @@ function depthMixBar(el, legendEl){
   });
   segs=segData.map((sd,j)=>{
     const pct=Math.round(100*sd.c/total);
-    const lab=(sd.w>60)?`<text x="${sd.x+sd.w/2}" y="${H/2+4}" text-anchor="middle" font-size="12" font-weight="700" fill="${sd.i>=2?'#fff':'var(--ink)'}">${pct}%</text>`:"";
+    const lab=(sd.w>60)?`<text x="${sd.x+sd.w/2}" y="${H/2+4}" text-anchor="middle" font-size="12" font-weight="700" fill="${sd.i>=1?'#fff':'var(--ink)'}">${pct}%</text>`:"";
     // 2px surface gap between segments via stroke
     return `<g class="dseg" data-i="${sd.i}" data-c="${sd.c}" data-p="${pct}">
       <rect x="${sd.x}" y="4" width="${sd.w}" height="${H-8}" rx="4" fill="${colors[sd.i]}" stroke="var(--surface)" stroke-width="2"/>${lab}</g>`;
@@ -1520,7 +1519,7 @@ function renderHome(){
     <div class="goal-dots">${dots}</div>
     <div class="streak">${g.done
       ? `✓ Week closed! Streak: <b>${g.streak} week${g.streak===1?"":"s"}</b> 🔥`
-      : `${g.cur} of ${WEEK_GOAL} — ${WEEK_GOAL-g.cur} more substantive or deep conversation${WEEK_GOAL-g.cur===1?"":"s"} to keep the streak${g.streak?` (currently ${g.streak} 🔥)`:""}`}</div>`;
+      : `${g.cur} of ${WEEK_GOAL} — ${WEEK_GOAL-g.cur} more substantive conversation${WEEK_GOAL-g.cur===1?"":"s"} to keep the streak${g.streak?` (currently ${g.streak} 🔥)`:""}`}</div>`;
   // birthday radar
   const bd=upcomingBirthdays(14);
   document.getElementById("bdayStrip").innerHTML=bd.length?`<div class="card" style="background:var(--tint-rose);border-color:transparent">
