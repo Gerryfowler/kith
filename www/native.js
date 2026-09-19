@@ -70,7 +70,8 @@
         const ip=p.product.introPrice, trial=ip && ip.price===0 ? `${ip.periodNumberOfUnits} ${String(ip.periodUnit||"").toLowerCase()}${ip.periodNumberOfUnits>1?"s":""}` : "";
         return {price:p.product.priceString, trial}; };
       const out={monthly:pick("MONTHLY"), yearly:pick("ANNUAL")};
-      window.SamvarNative._prices=out; return out;
+      if(out.monthly||out.yearly) window.SamvarNative._prices=out; // only cache once StoreKit has returned products
+      return out;
     },
     async restore(){ await rc(); return entitlement(await Purchases.restorePurchases()); },
     async refreshEntitlement(){ await rc(); return entitlement(await Purchases.getCustomerInfo()); },
