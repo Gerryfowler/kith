@@ -195,14 +195,19 @@ function paywallSheet(reason){
     <div class="factline" style="font-size:14px"><span class="fk">💬</span><span><b>Openers written for you</b> from what you actually know about each person.</span></div>
     <div class="factline" style="font-size:14px"><span class="fk">☀️</span><span><b>Daily nudges</b>, birthday radar and streaks.</span></div>
     <div class="factline" style="font-size:14px"><span class="fk">∞</span><span><b>Unlimited</b> people, notes and openers. Everything stays on your phone.</span></div>
-    <button class="btn" data-buy="monthly" style="margin-top:14px">Start free trial · then £4.99 / month</button>
-    <button class="btn secondary" data-buy="yearly" style="margin-top:8px">Start free trial · then £29.99 / year</button>
+    <button class="btn" data-buy="monthly" style="margin-top:14px">Start free trial · monthly</button>
+    <button class="btn secondary" data-buy="yearly" style="margin-top:8px">Start free trial · yearly</button>
     <div style="display:flex;gap:8px;margin-top:10px">
       <button class="btn ghost small" id="pwRestore">Restore purchases</button>
       <button class="btn ghost small" id="pwClose">Not now</button></div>
     <p class="hint" style="text-align:center;margin-top:10px">Free for 7 days, then renews automatically unless cancelled. Cancel any time in Settings → Subscriptions; you keep everything until the trial ends.</p>`;
   document.body.appendChild(dlg); dlg.showModal();
   const close=()=>{ dlg.close(); dlg.remove(); };
+  // Prices come from the App Store via RevenueCat so every country sees its own currency.
+  window.SamvarNative?.prices?.().then(p=>{ if(!p||!dlg.isConnected) return;
+    if(p.monthly) dlg.querySelector('[data-buy="monthly"]').textContent=`Start free trial · then ${p.monthly.price} / month`;
+    if(p.yearly) dlg.querySelector('[data-buy="yearly"]').textContent=`Start free trial · then ${p.yearly.price} / year`;
+  }).catch(()=>{});
   dlg.querySelectorAll("[data-buy]").forEach(b=>b.addEventListener("click",async ()=>{
     const native=window.SamvarNative;
     if(!native||!native.purchase){ alert("Subscriptions are available in the App Store version of Samvar."); return; }
@@ -884,7 +889,7 @@ function renderSettingsUI(){
   document.getElementById("proCard").innerHTML=pro
     ?`<h2 style="font-size:17px">Samvar Pro ✓</h2><p class="hint">${p.trial?`Free trial${until?` — renews on ${until}`:""}.`:`Subscribed${until?` — renews ${until}`:""}.`} Manage or cancel in Settings → Subscriptions.</p>`
     :devMode()?`<h2 style="font-size:17px">Samvar Pro</h2><p class="hint">Developer mode — everything unlocked on this device.</p>`
-    :`<h2 style="font-size:17px">Samvar Pro</h2><p class="hint">Everything in Samvar, free for 7 days, then £4.99/month or £29.99/year. Cancel any time.</p>
+    :`<h2 style="font-size:17px">Samvar Pro</h2><p class="hint">Everything in Samvar, free for 7 days, then a monthly or yearly subscription at your local App Store price. Cancel any time.</p>
       <button class="btn small" id="proBtn" style="margin-top:10px">Start free trial</button>`;
   document.getElementById("proBtn")?.addEventListener("click",()=>paywallSheet(""));
   document.getElementById("devCard").style.display=devMode()?"block":"none";

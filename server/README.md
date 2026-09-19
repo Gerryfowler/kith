@@ -27,7 +27,7 @@ Every request carries `Authorization: Bearer <deviceId>` — a random UUID the a
 
 ## Cost model
 
-`MODEL` is `claude-sonnet-5`. Parse ≈ 1.5k in / 0.5k out ≈ $0.008; opener ≈ 0.6k in / 0.15k out ≈ $0.003. A heavy user (60 parses + 40 openers a month) costs ≈ $0.60 against £4.99/month.
+`MODEL` is `claude-sonnet-5`. Parse ≈ 1.5k in / 0.5k out ≈ $0.008; opener ≈ 0.6k in / 0.15k out ≈ $0.003. A heavy user (60 parses + 40 openers a month) costs ≈ $0.60 against $4.99/month.
 
 ## Verify before launch
 

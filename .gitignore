@@ -10,3 +10,6 @@ ios/App/App.xcodeproj/project.xcworkspace/xcuserdata/
 .env
 .env.*
 branding/*-preview.png
+
+# Apple private keys (In-App Purchase / App Store Connect API) — never commit
+*.p8

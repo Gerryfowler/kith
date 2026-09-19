@@ -6,7 +6,7 @@
 - **Bundle ID**: `app.samvar.ios` (change if you register a different domain)
 - **Primary category**: Lifestyle · **Secondary**: Productivity
 - **Age rating**: 4+ (no objectionable content; questionnaire all "No")
-- **Price**: Free to download; one auto-renewing subscription "Samvar Pro" (monthly £4.99 / yearly £29.99, placeholders) with a 7-day free introductory offer on both. No free tier.
+- **Price**: Free to download; one auto-renewing subscription "Samvar Pro" (base price USD 4.99/month, USD 49.99/year; Apple sets local equivalents, roughly £4.99 and £49.99) with a 7-day free introductory offer on both. No free tier.
 - **Seller**: Gerry Fowler (individual account; migrate to a company later via App Store Connect → Agreements)
 
 ## Promotional text (170 max, editable without a new build)
@@ -27,7 +27,7 @@ Samvar is a small, calm app that keeps that from happening.
 
 **Private by design.** Your people, notes and history live on your phone. No accounts, no ads, no selling data. Back up to a file whenever you like.
 
-Try everything free for 7 days. Then Samvar is £4.99 a month or £29.99 a year — about the price of one coffee with a friend.
+Try everything free for 7 days. Then Samvar is about the price of one coffee with a friend each month, or less on the yearly plan.
 
 — 
 Samvar Pro is an auto-renewing subscription with a 7-day free trial. Payment is charged to your Apple ID account at confirmation of purchase. The subscription renews automatically unless cancelled at least 24 hours before the end of the current period. Manage or cancel in Settings → Apple ID → Subscriptions. Privacy policy and terms: https://samvar.app/privacy

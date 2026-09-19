@@ -9,7 +9,7 @@
   const LocalNotifications=reg("LocalNotifications"), Contacts=reg("Contacts"), Purchases=reg("Purchases"),
         Haptics=reg("Haptics"), Share=reg("Share"), App=reg("App"), StatusBar=reg("StatusBar"), Filesystem=reg("Filesystem");
 
-  const RC_IOS_KEY="appl_REPLACE_WITH_REVENUECAT_PUBLIC_IOS_KEY";
+  const RC_IOS_KEY="appl_HRQlVTfaAsgwxnwRfnwRfEFtsaJ";
   let rcReady=false;
   async function rc(){
     if(rcReady || !Purchases) return;
@@ -59,6 +59,18 @@
       const want=plan==="yearly"?"ANNUAL":"MONTHLY";
       const pkg=(cur.availablePackages||[]).find(p=>p.packageType===want) || cur.availablePackages[0];
       return entitlement(await Purchases.purchasePackage({aPackage:pkg}));
+    },
+    // Localized App Store prices for the paywall: {monthly:{price,trial}, yearly:{price,trial}} or null.
+    async prices(){
+      if(!Purchases) return null;
+      if(window.SamvarNative._prices) return window.SamvarNative._prices;
+      await rc();
+      const off=await Purchases.getOfferings(); const cur=off && off.current; if(!cur) return null;
+      const pick=t=>{ const p=(cur.availablePackages||[]).find(x=>x.packageType===t); if(!p||!p.product) return null;
+        const ip=p.product.introPrice, trial=ip && ip.price===0 ? `${ip.periodNumberOfUnits} ${String(ip.periodUnit||"").toLowerCase()}${ip.periodNumberOfUnits>1?"s":""}` : "";
+        return {price:p.product.priceString, trial}; };
+      const out={monthly:pick("MONTHLY"), yearly:pick("ANNUAL")};
+      window.SamvarNative._prices=out; return out;
     },
     async restore(){ await rc(); return entitlement(await Purchases.restorePurchases()); },
     async refreshEntitlement(){ await rc(); return entitlement(await Purchases.getCustomerInfo()); },
