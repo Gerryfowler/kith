@@ -1,0 +1,28 @@
+{
+  "name": "samvar",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Samvar — keep your people close",
+  "scripts": {
+    "ios:add": "cap add ios",
+    "ios:sync": "cap sync ios",
+    "ios:open": "cap open ios",
+    "assets": "capacitor-assets generate --ios --iconBackgroundColor '#faf6ee' --splashBackgroundColor '#faf6ee'"
+  },
+  "dependencies": {
+    "@capacitor/app": "^7.0.0",
+    "@capacitor/core": "^7.0.0",
+    "@capacitor/haptics": "^7.0.0",
+    "@capacitor/ios": "^7.0.0",
+    "@capacitor/local-notifications": "^7.0.0",
+    "@capacitor/share": "^7.0.0",
+    "@capacitor/splash-screen": "^7.0.0",
+    "@capacitor/status-bar": "^7.0.0",
+    "@capacitor-community/contacts": "^7.0.0",
+    "@revenuecat/purchases-capacitor": "^10.0.0"
+  },
+  "devDependencies": {
+    "@capacitor/assets": "^3.0.5",
+    "@capacitor/cli": "^7.0.0"
+  }
+}

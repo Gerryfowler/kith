@@ -1103,6 +1103,7 @@ function renderDrafts(){
     d.personIds.forEach(id=>{const p=DB.people.find(x=>x.id===id); if(p) delete p.snoozeUntil;});
     drafts.splice(+b.dataset.save,1);
     saveDB(); renderDrafts(); renderAll();
+    window.SamvarNative?.haptic("success"); window.SamvarNative?.scheduleNudges();
     if(!drafts.length){ document.getElementById("logText").value=""; switchPage("home"); }
   }));
   el.querySelectorAll("[data-discard]").forEach(b=>b.addEventListener("click",()=>{ drafts.splice(+b.dataset.discard,1); renderDrafts(); }));
@@ -1131,8 +1132,22 @@ document.getElementById("parseBtn").addEventListener("click",async ()=>{
 });
 /* goal, nudge preferences, people sub-views */
 document.querySelectorAll("#goalSeg button").forEach(b=>b.addEventListener("click",()=>{ DB.settings.weekGoal=+b.dataset.g; saveDB(); renderAll(); }));
-document.querySelectorAll("#nudgeSeg button").forEach(b=>b.addEventListener("click",()=>{ DB.settings.nudgeFreq=b.dataset.nf; DB.settings.nudgeSet=true; saveDB(); renderAll(); }));
-document.getElementById("nudgeTime").addEventListener("change",e=>{ DB.settings.nudgeTime=e.target.value; DB.settings.nudgeSet=true; saveDB(); renderAll(); });
+document.querySelectorAll("#nudgeSeg button").forEach(b=>b.addEventListener("click",()=>{ DB.settings.nudgeFreq=b.dataset.nf; DB.settings.nudgeSet=true; saveDB(); renderAll(); window.SamvarNative?.scheduleNudges({ask:true}); }));
+document.getElementById("nudgeTime").addEventListener("change",e=>{ DB.settings.nudgeTime=e.target.value; DB.settings.nudgeSet=true; saveDB(); renderAll(); window.SamvarNative?.scheduleNudges({ask:true}); });
+/* called by native.js once the Capacitor bridge is up */
+function initNativeUI(){
+  const n=window.SamvarNative; if(!n) return;
+  document.getElementById("nudgeStatus").textContent="Nudges arrive as notifications at the time you choose.";
+  const b=document.getElementById("pickContacts"); b.style.display="inline-flex"; b.textContent="📇 Add from Contacts";
+  b.onclick=async ()=>{
+    if(!entitled()){ paywallSheet("Start your free trial to add people."); return; }
+    try{ const c=await n.pickContact(); if(!c) return;
+      if(DB.people.some(p=>p.name.toLowerCase()===c.name.toLowerCase())){ alert(c.name+" is already in your circles."); return; }
+      askTier(c.name, tier=>{ DB.people.push({id:uid(),name:c.name,tier,aliases:[],added:Date.now(),tel:c.tel,addr:c.addr}); saveDB(); renderAll(); n.haptic("success"); });
+    }catch(e){ /* cancelled */ }
+  };
+  document.getElementById("contactsHint").textContent="Add from Contacts brings the name, number and address across — only for the people you pick.";
+}
 document.getElementById("nudgePreview").addEventListener("click",()=>{
   const n=nudgeText(), next=nextNudgeTimes(1)[0];
   document.getElementById("nudgePreviewOut").innerHTML=`<b>${esc(n.title)}</b> — ${esc(n.body)}<br>${next?`Next one ${new Date(next).toLocaleString("en-GB",{weekday:"short",hour:"2-digit",minute:"2-digit"})}.`:"Nudges are off."}`;
