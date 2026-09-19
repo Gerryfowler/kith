@@ -6,7 +6,7 @@
 - **Bundle ID**: `app.samvar.ios` (change if you register a different domain)
 - **Primary category**: Lifestyle · **Secondary**: Productivity
 - **Age rating**: 4+ (no objectionable content; questionnaire all "No")
-- **Price**: Free, with auto-renewing subscription "Samvar Pro"
+- **Price**: Free to download; one auto-renewing subscription "Samvar Pro" (monthly £4.99 / yearly £29.99, placeholders) with a 7-day free introductory offer on both. No free tier.
 - **Seller**: Gerry Fowler (individual account; migrate to a company later via App Store Connect → Agreements)
 
 ## Promotional text (170 max, editable without a new build)
@@ -27,10 +27,10 @@ Samvar is a small, calm app that keeps that from happening.
 
 **Private by design.** Your people, notes and history live on your phone. No accounts, no ads, no selling data. Back up to a file whenever you like.
 
-Samvar is free to use. Samvar Pro adds AI understanding of your notes, drafted openers, unlimited people and the home-screen widget.
+Try everything free for 7 days. Then Samvar is £4.99 a month or £29.99 a year — about the price of one coffee with a friend.
 
 — 
-Samvar Pro is an auto-renewing subscription. Payment is charged to your Apple ID account at confirmation of purchase. The subscription renews automatically unless cancelled at least 24 hours before the end of the current period. Manage or cancel in Settings → Apple ID → Subscriptions. Privacy policy and terms: https://samvar.app/privacy
+Samvar Pro is an auto-renewing subscription with a 7-day free trial. Payment is charged to your Apple ID account at confirmation of purchase. The subscription renews automatically unless cancelled at least 24 hours before the end of the current period. Manage or cancel in Settings → Apple ID → Subscriptions. Privacy policy and terms: https://samvar.app/privacy
 
 ## Keywords (100 chars, comma-separated, no spaces after commas)
 `friends,relationships,stay in touch,contacts,crm,reminder,birthday,connection,social,journal,network`
@@ -61,7 +61,7 @@ Capture from the simulator with realistic seeded data. One headline per shot, da
 - No third-party analytics or ads SDKs in v1.
 
 ## Review notes (for Apple's reviewer)
-"Samvar stores all data on device. To test: add three people on the People tab, then on Log type 'Coffee with Sarah this morning, I organised it, long chat about her new job' and tap Review & score. Nudges appear on Today. Pro features can be unlocked in the sandbox with the Samvar Pro monthly plan."
+"Samvar stores all data on device. The app requires the Samvar Pro subscription after a 7-day free trial; in the sandbox, tap Start free trial on the first screen to unlock it. Then add three people on the People tab, and on Log type 'Coffee with Sarah this morning, I organised it, long chat about her new job' and tap Review & score. Nudges appear on Today."
 
 ## Pre-submission checklist
 - [ ] Apple Developer Program enrolment approved

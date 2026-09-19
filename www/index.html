@@ -122,6 +122,7 @@
 
   <!-- ============ YOU ============ -->
   <section class="page" id="page-settings">
+    <div class="card t-lav" id="proCard"></div>
     <div class="card">
       <h2 style="font-size:17px">Your weekly goal</h2>
       <p class="hint">How many meaningful conversations you want each week. Streaks count the weeks you hit it.</p>
@@ -170,9 +171,9 @@
         <button data-th="auto">Match phone</button>
       </div>
     </div>
-    <div class="card">
-      <h2 style="font-size:17px">Smart understanding (Claude)</h2>
-      <p class="hint">Temporary, for testing: paste an Anthropic API key and Samvar uses Claude to genuinely understand your notes. In the App Store version this becomes part of Samvar Pro — no key needed.</p>
+    <div class="card" id="devCard" style="display:none">
+      <h2 style="font-size:17px">Developer: direct API key</h2>
+      <p class="hint">Testing only. With a key here, notes and openers go straight to Anthropic from this device instead of through Samvar’s server. Tap the Samvar wordmark five times to hide this again.</p>
       <div style="display:flex;gap:8px;margin-top:10px">
         <input type="password" id="apiKey" placeholder="sk-ant-…" autocomplete="off">
         <button class="btn small" id="apiSave">Save</button>

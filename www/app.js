@@ -163,10 +163,62 @@ function parseNote(text){
   });
 }
 
-/* ---------- Claude-powered understanding ---------- */
+/* ---------- Samvar AI: via Samvar's server (Pro / free quota), or a direct key in dev mode ---------- */
+const API_BASE=(()=>{ try{ return localStorage.getItem("samvar-api-base")||"https://api.samvar.app"; }catch(e){ return "https://api.samvar.app"; } })();
+function devMode(){ try{ return localStorage.getItem("samvar-dev")==="1"; }catch(e){ return false; } }
 const AK_KEY="samvar-api-key";
-function getApiKey(){ try{ return localStorage.getItem(AK_KEY)||localStorage.getItem("kith-api-key")||""; }catch(e){ return window.__memKey||""; } }
+function getApiKey(){ if(!devMode()) return ""; try{ return localStorage.getItem(AK_KEY)||localStorage.getItem("kith-api-key")||""; }catch(e){ return window.__memKey||""; } }
 function setApiKey(k){ try{ localStorage.setItem(AK_KEY,k); }catch(e){ window.__memKey=k; } }
+function deviceId(){
+  if(!DB.settings.deviceId){ DB.settings.deviceId=(crypto.randomUUID?crypto.randomUUID():uid()+uid()+uid()); saveDB(); }
+  return DB.settings.deviceId;
+}
+function isPro(){ const p=DB.settings.pro; return !!(p && p.active && (!p.expires || p.expires>Date.now())); }
+function entitled(){ return isPro() || devMode(); }
+class QuotaError extends Error{}
+async function samvarAI(path, payload){
+  const r=await fetch(API_BASE+path,{method:"POST",
+    headers:{"content-type":"application/json","authorization":"Bearer "+deviceId()},
+    body:JSON.stringify(payload)});
+  const plan=r.headers.get("x-samvar-plan");
+  if(plan){ DB.settings.pro=Object.assign(DB.settings.pro||{},{active:plan==="pro",checked:Date.now()}); saveDB(); }
+  if(r.status===402) throw new QuotaError("quota");
+  if(!r.ok){ const e=await r.text().catch(()=>""); throw new Error("Samvar AI "+r.status+(e?": "+e.slice(0,120):"")); }
+  return r.json();
+}
+function paywallSheet(reason){
+  const dlg=document.createElement("dialog");
+  dlg.innerHTML=`<div style="text-align:center;font-size:34px;padding-top:4px">🌱</div>
+    <h2 style="font-size:22px;text-align:center;letter-spacing:-.02em">Try Samvar free for 7 days</h2>
+    ${reason?`<p class="hint" style="text-align:center;margin:4px 0 12px;font-size:14px">${esc(reason)}</p>`:""}
+    <div class="factline" style="font-size:14px"><span class="fk">✨</span><span><b>Claude reads your notes</b> — several people in one ramble, relative dates, facts worth remembering.</span></div>
+    <div class="factline" style="font-size:14px"><span class="fk">💬</span><span><b>Openers written for you</b> from what you actually know about each person.</span></div>
+    <div class="factline" style="font-size:14px"><span class="fk">☀️</span><span><b>Daily nudges</b>, birthday radar, streaks and the home-screen widget.</span></div>
+    <div class="factline" style="font-size:14px"><span class="fk">∞</span><span><b>Unlimited</b> people, notes and openers. Everything stays on your phone.</span></div>
+    <button class="btn" data-buy="monthly" style="margin-top:14px">Start free trial · then £4.99 / month</button>
+    <button class="btn secondary" data-buy="yearly" style="margin-top:8px">Start free trial · then £29.99 / year</button>
+    <div style="display:flex;gap:8px;margin-top:10px">
+      <button class="btn ghost small" id="pwRestore">Restore purchases</button>
+      <button class="btn ghost small" id="pwClose">Not now</button></div>
+    <p class="hint" style="text-align:center;margin-top:10px">Free for 7 days, then renews automatically unless cancelled. Cancel any time in Settings → Subscriptions; you keep everything until the trial ends.</p>`;
+  document.body.appendChild(dlg); dlg.showModal();
+  const close=()=>{ dlg.close(); dlg.remove(); };
+  dlg.querySelectorAll("[data-buy]").forEach(b=>b.addEventListener("click",async ()=>{
+    const native=window.SamvarNative;
+    if(!native||!native.purchase){ alert("Subscriptions are available in the App Store version of Samvar."); return; }
+    b.disabled=true;
+    try{ const res=await native.purchase(b.dataset.buy); if(res&&res.active){ DB.settings.pro={active:true,expires:res.expires||0,trial:!!res.trial,source:"appstore"}; saveDB(); close(); renderAll(); } }
+    catch(e){ alert("Purchase didn't complete."); }
+    b.disabled=false;
+  }));
+  dlg.querySelector("#pwRestore").addEventListener("click",async ()=>{
+    const native=window.SamvarNative;
+    if(!native||!native.restore){ alert("Restore is available in the App Store version of Samvar."); return; }
+    try{ const res=await native.restore(); if(res&&res.active){ DB.settings.pro={active:true,expires:res.expires||0,trial:!!res.trial,source:"appstore"}; saveDB(); close(); renderAll(); } else alert("No active subscription found for this Apple ID."); }
+    catch(e){ alert("Couldn't restore right now."); }
+  });
+  dlg.querySelector("#pwClose").addEventListener("click",close);
+}
 async function claudeCall(system, userText, maxTokens){
   const r=await fetch("https://api.anthropic.com/v1/messages",{
     method:"POST",
@@ -249,10 +301,16 @@ function fuzzyFind(raw){
 async function aiParse(text){
   const people=DB.people.map(p=>p.name+((p.aliases||[]).length?` (aka ${p.aliases.join(", ")})`:"")).join("; ")||"(none yet)";
   const today=new Date();
-  const out=await claudeCall(PARSE_SYSTEM,
-    `Today is ${today.toLocaleDateString("en-GB",{weekday:"long",year:"numeric",month:"long",day:"numeric"})}.\nKnown people: ${people}\n\nNote:\n${text}`);
-  const m=out.match(/\[[\s\S]*\]/); if(!m) throw new Error("Unexpected reply");
-  const arr=JSON.parse(m[0]); if(!Array.isArray(arr)) throw new Error("Unexpected reply");
+  let arr;
+  if(getApiKey()){
+    const out=await claudeCall(PARSE_SYSTEM,
+      `Today is ${today.toLocaleDateString("en-GB",{weekday:"long",year:"numeric",month:"long",day:"numeric"})}.\nKnown people: ${people}\n\nNote:\n${text}`);
+    const m=out.match(/\[[\s\S]*\]/); if(!m) throw new Error("Unexpected reply");
+    arr=JSON.parse(m[0]);
+  } else {
+    arr=await samvarAI("/v1/parse",{note:text, people, today:today.toLocaleDateString("en-GB",{weekday:"long",year:"numeric",month:"long",day:"numeric"})});
+  }
+  if(!Array.isArray(arr)) throw new Error("Unexpected reply");
   return arr.map(o=>{
     const personIds=[], pendingNames=[];
     for(const n of (o.people||[])){
@@ -684,7 +742,7 @@ function bindNudgeButtons(root){
       if(act==="snooze"){ p.snoozeUntil=Date.now()+7*DAY; saveDB(); renderAll(); }
       if(act==="dismiss"){ dismiss(card.dataset.key,+b.dataset.days||14); renderAll(); }
       if(act==="promote"&&TIERS[b.dataset.to]){ p.tier=b.dataset.to; saveDB(); renderAll(); }
-      if(act==="opener") openerSheet(p,{q, deepen:card.dataset.kind==="deepen"});
+      if(act==="opener"){ if(!entitled()){ paywallSheet("Openers are part of Samvar — start your free trial."); return; } openerSheet(p,{q, deepen:card.dataset.kind==="deepen"}); }
     }));
   });
 }
@@ -697,10 +755,18 @@ async function aiOpeners(p,opts){
   const xs=DB.interactions.filter(x=>x.personIds.includes(p.id)).sort((a,b)=>b.ts-a.ts).slice(0,3);
   const intent=opts.q?`Intent: suggest that the three of us (me, ${p.name} and ${opts.q.name}) get together soon.`
     :opts.deepen?"Intent: go beyond logistics — ask about something that genuinely matters to them.":"";
-  const out=await claudeCall(OPENER_SYSTEM,
-    `Friend: ${p.name} (${TIERS[p.tier].label}).\nLast contact: ${xs[0]?fmtAgo(xs[0].ts)+" — "+(xs[0].note||DEPTHS[xs[0].depth-1].label):"never logged"}.\nRecent: ${xs.slice(1).map(x=>`${fmtAgo(x.ts)}: ${x.note||DEPTHS[x.depth-1].label}`).join("; ")||"none"}.\nThings I know about them: ${(p.facts||[]).map(f=>f.f).join("; ")||"nothing specific"}.\n${intent}`, 600);
-  const m=out.match(/\[[\s\S]*\]/); if(!m) throw new Error("Unexpected reply");
-  const arr=JSON.parse(m[0]); if(!Array.isArray(arr)) throw new Error("Unexpected reply");
+  const brief={name:p.name, tier:TIERS[p.tier].label,
+    last:xs[0]?fmtAgo(xs[0].ts)+" — "+(xs[0].note||DEPTHS[xs[0].depth-1].label):"never logged",
+    recent:xs.slice(1).map(x=>`${fmtAgo(x.ts)}: ${x.note||DEPTHS[x.depth-1].label}`).join("; ")||"none",
+    facts:(p.facts||[]).map(f=>f.f).join("; ")||"nothing specific", intent};
+  let arr;
+  if(getApiKey()){
+    const out=await claudeCall(OPENER_SYSTEM,
+      `Friend: ${brief.name} (${brief.tier}).\nLast contact: ${brief.last}.\nRecent: ${brief.recent}.\nThings I know about them: ${brief.facts}.\n${brief.intent}`, 600);
+    const m=out.match(/\[[\s\S]*\]/); if(!m) throw new Error("Unexpected reply");
+    arr=JSON.parse(m[0]);
+  } else arr=await samvarAI("/v1/openers",brief);
+  if(!Array.isArray(arr)) throw new Error("Unexpected reply");
   return arr.map(s=>String(s).trim()).filter(Boolean).slice(0,3);
 }
 function ruleOpeners(p,opts){
@@ -754,7 +820,8 @@ async function openerSheet(p,opts={}){
   };
   dlg.innerHTML=`<h2 style="font-size:17px">Message ${esc(capName(p))}</h2><p class="hint">Thinking about what to say…</p>`;
   document.body.appendChild(dlg); dlg.showModal();
-  if(getApiKey()){ try{ render(await aiOpeners(p,opts),"ai"); return; }catch(e){ /* fall through to rules */ } }
+  try{ render(await aiOpeners(p,opts),"ai"); return; }
+  catch(e){ if(e instanceof QuotaError){ dlg.close(); dlg.remove(); paywallSheet("Your trial or subscription has ended — renew to keep the openers."); return; } }
   render(ruleOpeners(p,opts),"rule");
 }
 
@@ -807,6 +874,15 @@ function renderInsights(){
   depthMixBar(document.getElementById("depthBar"), document.getElementById("depthLegend"));
 }
 function renderSettingsUI(){
+  const p=DB.settings.pro||{}, pro=isPro();
+  const until=p.expires?new Date(p.expires).toLocaleDateString("en-GB",{day:"numeric",month:"short"}):"";
+  document.getElementById("proCard").innerHTML=pro
+    ?`<h2 style="font-size:17px">Samvar Pro ✓</h2><p class="hint">${p.trial?`Free trial${until?` — renews on ${until}`:""}.`:`Subscribed${until?` — renews ${until}`:""}.`} Manage or cancel in Settings → Subscriptions.</p>`
+    :devMode()?`<h2 style="font-size:17px">Samvar Pro</h2><p class="hint">Developer mode — everything unlocked on this device.</p>`
+    :`<h2 style="font-size:17px">Samvar Pro</h2><p class="hint">Everything in Samvar, free for 7 days, then £4.99/month or £29.99/year. Cancel any time.</p>
+      <button class="btn small" id="proBtn" style="margin-top:10px">Start free trial</button>`;
+  document.getElementById("proBtn")?.addEventListener("click",()=>paywallSheet(""));
+  document.getElementById("devCard").style.display=devMode()?"block":"none";
   const G=weekGoal();
   document.querySelectorAll("#goalSeg button").forEach(b=>b.classList.toggle("on",+b.dataset.g===G));
   document.querySelectorAll("#nudgeSeg button").forEach(b=>b.classList.toggle("on",b.dataset.nf===(DB.settings.nudgeFreq||"daily")));
@@ -828,6 +904,7 @@ function renderTriage(){
     const name=card.dataset.cand;
     card.querySelectorAll("button").forEach(b=>b.addEventListener("click",()=>{
       const cand=DB.candidates.find(c=>c.name===name);
+      if(b.dataset.tier!=="skip" && !entitled()){ paywallSheet("Start your free trial to add people."); return; }
       DB.candidates=DB.candidates.filter(c=>c.name!==name);
       if(b.dataset.tier!=="skip") DB.people.push({id:uid(),name,tier:b.dataset.tier,aliases:[],added:Date.now(),addr:cand?.addr,loc:cand?.loc,tel:cand?.tel});
       saveDB(); renderAll();
@@ -924,6 +1001,7 @@ function personSheet(pid){
   dlg.querySelector("#dlgDel").addEventListener("click",()=>{ if(confirm(`Remove ${p.name}? Their logged interactions stay but untagged.`)){ DB.people=DB.people.filter(x=>x.id!==pid); saveDB(); dlg.close(); dlg.remove(); renderAll(); }});
 }
 function askTier(name, cb){
+  if(!entitled()){ paywallSheet("Start your free trial to add people."); return; }
   const dlg=document.createElement("dialog");
   dlg.innerHTML=`<h2 style="font-size:17px">Which circle is ${esc(name)} in?</h2>
     <div class="seg" style="margin-top:12px">${Object.entries(TIERS).map(([k,t])=>`<button data-tier="${k}">${t.label}</button>`).join("")}</div>
@@ -1032,16 +1110,14 @@ function renderDrafts(){
 document.getElementById("parseBtn").addEventListener("click",async ()=>{
   const text=document.getElementById("logText").value.trim();
   if(!text) return;
+  if(!entitled()){ paywallSheet("Start your free trial to log conversations."); return; }
   const btn=document.getElementById("parseBtn");
-  if(getApiKey()){
-    btn.textContent="Understanding…"; btn.disabled=true;
-    try{ drafts=await aiParse(text); if(!drafts.length){ alert("Claude couldn't find an interaction in that note — try describing who you spoke to."); } }
-    catch(e){ drafts=parseNote(text);
-      alert("Couldn't reach Claude ("+e.message.slice(0,80)+") — used the simple rules instead."); }
-    finally{ btn.textContent="Review & score"; btn.disabled=false; }
-  } else {
-    drafts=parseNote(text);
-  }
+  btn.textContent="Understanding…"; btn.disabled=true;
+  try{ drafts=await aiParse(text); if(!drafts.length){ alert("Couldn't find an interaction in that note — try describing who you spoke to."); } }
+  catch(e){ drafts=parseNote(text);
+    if(e instanceof QuotaError) paywallSheet("Your trial or subscription has ended — this note was filed with the simple rules instead.");
+    else if(!/Failed to fetch|NetworkError|Load failed/.test(e.message)) alert("Couldn't reach Samvar AI ("+e.message.slice(0,80)+") — used the simple rules instead."); }
+  finally{ btn.textContent="Review & score"; btn.disabled=false; }
   renderDrafts();
   document.getElementById("drafts").scrollIntoView({behavior:"smooth"});
   // GPS autofill: what the note says beats where you are; GPS only applies to entries dated today
@@ -1070,7 +1146,14 @@ function showPeopleView(v){
   if(v==="places") setTimeout(renderMap,80);
 }
 document.querySelectorAll("#peopleSeg button").forEach(b=>b.addEventListener("click",()=>showPeopleView(b.dataset.pv)));
-/* API key save + live test */
+/* hidden developer mode: tap the Samvar wordmark five times */
+let brandTaps=0, brandTapAt=0;
+document.querySelector("header.app h1").addEventListener("click",()=>{
+  const now=Date.now(); brandTaps=(now-brandTapAt<1500)?brandTaps+1:1; brandTapAt=now;
+  if(brandTaps>=5){ brandTaps=0; try{ localStorage.setItem("samvar-dev",devMode()?"0":"1"); }catch(e){}
+    alert(devMode()?"Developer mode on — direct API key card shown under You.":"Developer mode off."); renderAll(); }
+});
+/* API key save + live test (developer mode only) */
 document.getElementById("apiKey").value=getApiKey();
 document.getElementById("apiSave").addEventListener("click",async ()=>{
   const k=document.getElementById("apiKey").value.trim();
@@ -1458,7 +1541,8 @@ function showWelcome(){
     <button class="btn ghost small" id="wImport" style="width:100%;margin-top:8px">I have a backup file</button>`;
   document.body.appendChild(dlg); dlg.showModal();
   const done=()=>{ DB.settings.welcomed=true; saveDB(); dlg.close(); dlg.remove(); };
-  dlg.querySelector("#wGo").addEventListener("click",()=>{ done(); switchPage("people"); document.getElementById("newPersonName").focus(); });
+  dlg.querySelector("#wGo").addEventListener("click",()=>{ done(); switchPage("people");
+    if(entitled()) document.getElementById("newPersonName").focus(); else paywallSheet("Everything is free for 7 days — no limits."); });
   dlg.querySelector("#wImport").addEventListener("click",()=>{ done(); document.getElementById("importFile").click(); });
 }
 showWelcome();
