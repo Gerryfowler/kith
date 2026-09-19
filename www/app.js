@@ -571,14 +571,15 @@ function renderHome(){
   sparkline(document.getElementById("sparkWrap"), DB.interactions.length?weeklySeries(12):[]);
   renderRings();
 
-  // reach out today: top 3 by urgency, expandable to everyone overdue
+  renderReflection();
+  // reach out today: top 3 nudges by urgency, expandable to all
   const att=document.getElementById("homeAttention"), more=document.getElementById("suggMore");
-  const list=suggestions();
+  const list=nudges();
   const shown=showAllSugg?list:list.slice(0,3);
-  att.innerHTML=shown.length?shown.map(u=>suggCard(u,false)).join(""):
+  att.innerHTML=shown.length?shown.map(nudgeCard).join(""):
     `<div class="card empty">Everyone’s in rhythm — nice. Nudges appear here when someone has gone quiet longer than their circle’s rhythm.</div>`;
-  bindSuggButtons(att);
-  more.innerHTML=list.length>3?`<button class="btn ghost small" id="suggToggle" style="margin:0 0 12px">${showAllSugg?"Show fewer":`See all ${list.length} overdue`}</button>`:"";
+  bindNudgeButtons(att);
+  more.innerHTML=list.length>3?`<button class="btn ghost small" id="suggToggle" style="margin:0 0 12px">${showAllSugg?"Show fewer":`See all ${list.length}`}</button>`:"";
   more.querySelector("#suggToggle")?.addEventListener("click",()=>{ showAllSugg=!showAllSugg; renderHome(); });
 
   const rec=document.getElementById("homeRecent");
@@ -611,37 +612,193 @@ function suggestions(){
   }
   return out.sort((a,b)=>b.urgency-a.urgency);
 }
-function suggCard(u, compact){
-  const t=TIERS[u.p.tier];
-  const h=healthOfP(u.p,Date.now());
-  return `<div class="sugg" data-pid="${u.p.id}">
-    <div style="display:flex;align-items:center;gap:10px">
-      ${av(u.p.name)}
-      <div><div class="nm" style="font-weight:700">${esc(u.p.name)}</div>
-      <span class="status" style="color:${h.color}"><i style="background:${h.color}"></i>${h.label}</span></div>
-      <div class="spacer"></div><span class="badge">${t.label}</span>
-    </div>
-    <div class="why">Last contact <b>${u.last?fmtAgo(u.last):"never logged"}</b>${t.cadence?` — your rhythm for this circle is every ${t.cadence} days`:""}.</div>
-    ${(u.p.facts&&u.p.facts.length)?`<div class="why">💡 ${u.p.facts.slice(-2).map(f=>esc(f.f)).join(" · ")}</div>`:""}
-    <div class="row">
-      ${contactBtns(u.p)}
-      <button class="btn ${u.p.tel?"ghost ":""}small" data-act="log">✓ Log it</button>
-      <button class="btn ghost small" data-act="snooze">Snooze</button>
-      ${compact?"":`<button class="btn ghost small" data-act="tier">Circle</button>`}
-    </div></div>`;
+/* ---------- nudge engine: overdue + expansion nudges ---------- */
+function dismissed(key){ const d=DB.settings.dismissed||{}; return !!d[key] && d[key]>Date.now(); }
+function dismiss(key,days){ (DB.settings.dismissed=DB.settings.dismissed||{})[key]=Date.now()+days*DAY; saveDB(); }
+function nudges(){
+  const now=Date.now(), out=[];
+  for(const u of suggestions()) out.push({kind:"overdue", key:"overdue:"+u.p.id, p:u.p, last:u.last, urgency:u.urgency});
+  const core=DB.people.filter(p=>p.tier==="inner"||p.tier==="invest");
+  const history=p=>DB.interactions.filter(x=>x.personIds.includes(p.id)).sort((a,b)=>b.ts-a.ts);
+  const yourTurn=core.find(p=>{ const xs=history(p); return xs.length>=2 && xs[0].initiator==="them" && xs[1].initiator==="them"; });
+  if(yourTurn) out.push({kind:"yourturn", key:"yourturn:"+yourTurn.id, p:yourTurn, urgency:0.9,
+    why:`${esc(capName(yourTurn))} reached out the last two times — your turn to initiate.`});
+  const deepen=core.find(p=>{ const xs=history(p).slice(0,3); return xs.length===3 && xs.every(x=>x.depth<=2); });
+  if(deepen) out.push({kind:"deepen", key:"deepen:"+deepen.id, p:deepen, urgency:0.7,
+    why:`Your last three chats with ${esc(capName(deepen))} were light. Make the next one count — ask about something that matters to them.`});
+  for(const p of DB.people){
+    const n=history(p).filter(x=>now-x.ts<=60*DAY).length;
+    if(p.tier==="warm" && n>=3) out.push({kind:"promote", key:"promote:"+p.id, p, to:"invest", urgency:0.6,
+      why:`You've seen ${esc(capName(p))} ${n} times in two months — more than a Keep-warm rhythm. Move to Invest?`});
+    else if(p.tier==="invest" && n>=6) out.push({kind:"promote", key:"promote:"+p.id, p, to:"inner", urgency:0.6,
+      why:`${esc(capName(p))} is in your life almost weekly. Inner circle?`});
+  }
+  const {pairs}=coData(), adj={};
+  for(const k of pairs.keys()){ const [a,b]=k.split("|"); (adj[a]=adj[a]||new Set()).add(b); (adj[b]=adj[b]||new Set()).add(a); }
+  outer: for(let i=0;i<core.length;i++) for(let j=i+1;j<core.length;j++){
+    const a=core[i], b=core[j]; if(pairs.has(pairKey(a.id,b.id))) continue;
+    const via=[...(adj[a.id]||[])].find(c=>adj[b.id]?.has(c)); if(!via) continue;
+    const c=DB.people.find(x=>x.id===via); if(!c) continue;
+    out.push({kind:"introduce", key:"intro:"+pairKey(a.id,b.id), p:a, q:b, urgency:0.5,
+      why:`${esc(capName(a))} and ${esc(capName(b))} both know ${esc(capName(c))}, but you've never had them in the same room.`});
+    break outer;
+  }
+  return out.filter(n=>!dismissed(n.key)).sort((a,b)=>b.urgency-a.urgency);
 }
-function bindSuggButtons(root){
+const KIND_LABEL={yourturn:"Your turn",deepen:"Go deeper",promote:"Closer than you think",introduce:"Introduce"};
+function nudgeCard(n){
+  const p=n.p, t=TIERS[p.tier], h=healthOfP(p,Date.now());
+  const col=n.kind==="overdue"?h.color:"var(--accent)", lab=n.kind==="overdue"?h.label:KIND_LABEL[n.kind];
+  const head=n.kind==="introduce"
+    ?`<div style="display:flex;align-items:center;gap:10px">${av(p.name)}${av(n.q.name)}
+        <div><div class="nm" style="font-weight:700">${esc(capName(p))} &amp; ${esc(capName(n.q))}</div>
+        <span class="status" style="color:${col}"><i style="background:${col}"></i>${lab}</span></div></div>`
+    :`<div style="display:flex;align-items:center;gap:10px">${av(p.name)}
+        <div><div class="nm" style="font-weight:700">${esc(p.name)}</div>
+        <span class="status" style="color:${col}"><i style="background:${col}"></i>${lab}</span></div>
+        <div class="spacer"></div><span class="badge">${t.label}</span></div>`;
+  const why=n.kind==="overdue"
+    ?`Last contact <b>${n.last?fmtAgo(n.last):"never logged"}</b> — your rhythm for this circle is every ${t.cadence} days.`
+    :n.why;
+  const facts=(["overdue","yourturn","deepen"].includes(n.kind) && (p.facts||[]).length)
+    ?`<div class="why">💡 ${p.facts.slice(-2).map(f=>esc(f.f)).join(" · ")}</div>`:"";
+  let row;
+  if(n.kind==="promote") row=`<button class="btn small" data-act="promote" data-to="${n.to}">Move to ${TIERS[n.to].label}</button>
+      <button class="btn ghost small" data-act="dismiss" data-days="60">Keep as is</button>`;
+  else if(n.kind==="introduce") row=`<button class="btn small" data-act="opener">✨ Suggest it to ${esc(capName(p))}</button>
+      <button class="btn ghost small" data-act="dismiss" data-days="30">Not now</button>`;
+  else row=`${contactBtns(p)}<button class="btn ${p.tel?"ghost ":""}small" data-act="opener">✨ Opener</button>
+      <button class="btn ghost small" data-act="log">✓ Log it</button>
+      <button class="btn ghost small" data-act="${n.kind==="overdue"?"snooze":"dismiss"}" data-days="14">${n.kind==="overdue"?"Snooze":"Not now"}</button>`;
+  return `<div class="sugg" data-pid="${p.id}" data-key="${n.key}" data-kind="${n.kind}"${n.q?` data-qid="${n.q.id}"`:""}>
+    ${head}<div class="why">${why}</div>${facts}<div class="row">${row}</div></div>`;
+}
+function bindNudgeButtons(root){
   root.querySelectorAll(".sugg").forEach(card=>{
-    const pid=card.dataset.pid;
-    card.querySelectorAll("button").forEach(b=>b.addEventListener("click",()=>{
-      const p=DB.people.find(x=>x.id===pid);
-      if(b.dataset.act==="log"){ switchPage("log");
-        document.getElementById("logText").value=`With ${p.name}, I reached out — `;
-        document.getElementById("logText").focus(); }
-      if(b.dataset.act==="snooze"){ p.snoozeUntil=Date.now()+7*DAY; saveDB(); renderAll(); }
-      if(b.dataset.act==="tier"){ askTier(p.name, tier=>{ p.tier=tier; saveDB(); renderAll(); }); }
+    const p=DB.people.find(x=>x.id===card.dataset.pid); if(!p) return;
+    const q=card.dataset.qid?DB.people.find(x=>x.id===card.dataset.qid):null;
+    card.querySelectorAll("button[data-act]").forEach(b=>b.addEventListener("click",()=>{
+      const act=b.dataset.act;
+      if(act==="log"){ switchPage("log");
+        const ta=document.getElementById("logText"); ta.value=`With ${p.name}, I reached out — `; ta.focus(); }
+      if(act==="snooze"){ p.snoozeUntil=Date.now()+7*DAY; saveDB(); renderAll(); }
+      if(act==="dismiss"){ dismiss(card.dataset.key,+b.dataset.days||14); renderAll(); }
+      if(act==="promote"&&TIERS[b.dataset.to]){ p.tier=b.dataset.to; saveDB(); renderAll(); }
+      if(act==="opener") openerSheet(p,{q, deepen:card.dataset.kind==="deepen"});
     }));
   });
+}
+
+/* ---------- drafted openers ---------- */
+const OPENER_SYSTEM=`You write short, warm, natural opening messages someone can send to a friend they want to stay close to.
+Return ONLY a JSON array of 3 strings. Each is at most 25 words, British English, casual, and sounds like a real text from a friend — no "hope this finds you well", no sign-offs, no hashtags, emojis only if natural.
+Use the supplied facts to be specific and caring; never invent facts. Vary the three: one picks up on a fact, one proposes a concrete plan, one is light and easy to reply to.`;
+async function aiOpeners(p,opts){
+  const xs=DB.interactions.filter(x=>x.personIds.includes(p.id)).sort((a,b)=>b.ts-a.ts).slice(0,3);
+  const intent=opts.q?`Intent: suggest that the three of us (me, ${p.name} and ${opts.q.name}) get together soon.`
+    :opts.deepen?"Intent: go beyond logistics — ask about something that genuinely matters to them.":"";
+  const out=await claudeCall(OPENER_SYSTEM,
+    `Friend: ${p.name} (${TIERS[p.tier].label}).\nLast contact: ${xs[0]?fmtAgo(xs[0].ts)+" — "+(xs[0].note||DEPTHS[xs[0].depth-1].label):"never logged"}.\nRecent: ${xs.slice(1).map(x=>`${fmtAgo(x.ts)}: ${x.note||DEPTHS[x.depth-1].label}`).join("; ")||"none"}.\nThings I know about them: ${(p.facts||[]).map(f=>f.f).join("; ")||"nothing specific"}.\n${intent}`, 600);
+  const m=out.match(/\[[\s\S]*\]/); if(!m) throw new Error("Unexpected reply");
+  const arr=JSON.parse(m[0]); if(!Array.isArray(arr)) throw new Error("Unexpected reply");
+  return arr.map(s=>String(s).trim()).filter(Boolean).slice(0,3);
+}
+function ruleOpeners(p,opts){
+  const n=capName(p), out=[];
+  if(opts.q) out.push(`Hey ${n}, I've been meaning to get you and ${capName(opts.q)} in the same room — fancy a drink one evening soon?`);
+  const f=[...(p.facts||[])].reverse().find(x=>x.kind!=="date");
+  if(f){ const t=f.f.replace(/^(his|her|their)\s+/i,"").replace(/\.$/,"");
+    out.push(f.kind==="plans"?`Hey ${n} — how's the ${t} going?`
+      :f.kind==="work"?`Hey ${n}, how's work? Last I heard: ${t}.`
+      :`Hey ${n}, was thinking about you — ${t}. How's that going?`); }
+  out.push(`Hey ${n}, been too long! How are things? Free for a coffee or a call next week?`);
+  out.push(`Hey ${n} — random one, but you popped into my head today. How's life?`);
+  return out.slice(0,3);
+}
+function sendMessage(p,text){
+  const t=telDigits(p.tel);
+  if(t){ const sep=/iPhone|iPad|Macintosh/.test(navigator.userAgent)?"&":"?"; location.href=`sms:${t}${sep}body=${encodeURIComponent(text)}`; return; }
+  if(navigator.share){ navigator.share({text}).catch(()=>{}); return; }
+  navigator.clipboard?.writeText(text);
+  alert(`Copied — no phone number saved for ${capName(p)}, so paste it wherever you two chat.`);
+}
+function logMessageSent(p,text){
+  DB.interactions.push({id:uid(),ts:Date.now(),personIds:[p.id],initiator:"me",depth:2,channel:"message",note:text.slice(0,120),place:""});
+  delete p.snoozeUntil; saveDB(); renderAll();
+}
+async function openerSheet(p,opts={}){
+  const dlg=document.createElement("dialog");
+  let sent=0;
+  const render=(lines,src)=>{
+    const t=telDigits(p.tel);
+    dlg.innerHTML=`<h2 style="font-size:17px;margin-bottom:4px">Message ${esc(capName(p))}</h2>
+      <p class="hint" style="margin:0 0 10px">${src==="ai"?`<span class="badge">Claude</span> drafted from what you know about ${esc(capName(p))} — edit freely.`
+        :`Simple starters. Add an API key under You for ones that use what you know about ${esc(capName(p))}.`}</p>
+      ${lines.map((l,i)=>`<div class="card" style="padding:12px;margin-bottom:8px">
+        <textarea data-op="${i}" style="min-height:88px;resize:none">${esc(l)}</textarea>
+        <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
+          <button class="btn small" data-send="${i}">${t?"Send":"Share"}</button>
+          ${t&&t.startsWith("+")?`<button class="btn ghost small" data-wa="${i}">WhatsApp</button>`:""}
+          <button class="btn ghost small" data-copy="${i}">Copy</button></div></div>`).join("")}
+      <div style="display:flex;gap:8px;margin-top:4px;flex-wrap:wrap">
+        <button class="btn ghost small" id="opLogged">✓ I sent it — log it</button>
+        <button class="btn ghost small" id="opClose">Close</button></div>`;
+    const txt=i=>dlg.querySelector(`[data-op="${i}"]`).value.trim();
+    dlg.querySelectorAll("[data-send]").forEach(b=>b.addEventListener("click",()=>{ sent=+b.dataset.send; sendMessage(p,txt(sent)); }));
+    dlg.querySelectorAll("[data-wa]").forEach(b=>b.addEventListener("click",()=>{ sent=+b.dataset.wa;
+      window.open(`https://wa.me/${t.slice(1)}?text=${encodeURIComponent(txt(sent))}`,"_blank","noopener"); }));
+    dlg.querySelectorAll("[data-copy]").forEach(b=>b.addEventListener("click",async()=>{ sent=+b.dataset.copy;
+      try{ await navigator.clipboard.writeText(txt(sent)); b.textContent="Copied ✓"; }catch(e){ b.textContent="Select & copy"; } }));
+    dlg.querySelector("#opLogged").addEventListener("click",()=>{ logMessageSent(p,txt(sent)); dlg.close(); dlg.remove(); });
+    dlg.querySelector("#opClose").addEventListener("click",()=>{ dlg.close(); dlg.remove(); });
+  };
+  dlg.innerHTML=`<h2 style="font-size:17px">Message ${esc(capName(p))}</h2><p class="hint">Thinking about what to say…</p>`;
+  document.body.appendChild(dlg); dlg.showModal();
+  if(getApiKey()){ try{ render(await aiOpeners(p,opts),"ai"); return; }catch(e){ /* fall through to rules */ } }
+  render(ruleOpeners(p,opts),"rule");
+}
+
+/* ---------- weekly reflection (shown Sunday & Monday) ---------- */
+function renderReflection(){
+  const el=document.getElementById("reflect"), dow=new Date().getDay();
+  if(dow!==0 && dow!==1){ el.innerHTML=""; return; }
+  const ws=dow===0?weekStart(Date.now()):weekStart(Date.now()-7*DAY), key="reflect:"+ws;
+  const xs=DB.interactions.filter(x=>x.ts>=ws && x.ts<ws+7*DAY);
+  if(dismissed(key) || !xs.length){ el.innerHTML=""; return; }
+  const meaningful=xs.filter(x=>x.depth>=3).length, mine=xs.filter(x=>x.initiator==="me").length;
+  const counts={}; xs.forEach(x=>x.personIds.forEach(id=>{ counts[id]=(counts[id]||0)+1; }));
+  const topId=Object.keys(counts).sort((a,b)=>counts[b]-counts[a])[0], top=DB.people.find(p=>p.id===topId);
+  const people=Object.keys(counts).length;
+  el.innerHTML=`<div class="card t-mint">
+    <div class="lbl" style="font-size:12px;color:var(--ink-2);font-weight:600;text-transform:uppercase;letter-spacing:.05em">${dow===0?"This week":"Last week"} in review</div>
+    <div style="font-size:15px;margin-top:6px;line-height:1.5"><b>${xs.length}</b> conversation${xs.length===1?"":"s"} with <b>${people}</b> ${people===1?"person":"people"} · <b>${meaningful}</b> meaningful · you started <b>${mine}</b>${top?` · most time with <b>${esc(capName(top))}</b>`:""}</div>
+    <div class="why" style="margin-top:6px">${meaningful>=weekGoal()?"Goal hit 🔥 ":""}${mine/xs.length<0.4?"Try initiating a couple more next week.":"Good balance of initiating."}</div>
+    <button class="btn ghost small" id="reflectOk" style="margin-top:10px">Got it</button></div>`;
+  el.querySelector("#reflectOk").addEventListener("click",()=>{ dismiss(key,8); renderAll(); });
+}
+
+/* ---------- nudge notification text & schedule (used by the native shell) ---------- */
+const NUDGE_DAYS={daily:[0,1,2,3,4,5,6],weekdays:[1,2,3,4,5],"3x":[1,3,5],weekly:[1],off:[]};
+function nudgeText(){
+  const parts=[];
+  for(const b of upcomingBirthdays(3)) parts.push(`🎂 ${capName(b.p)}'s birthday ${b.days===0?"today":b.days===1?"tomorrow":"in "+b.days+" days"}`);
+  for(const n of nudges().slice(0,2)){
+    if(n.kind==="overdue") parts.push(n.last?`${capName(n.p)} is ${healthOfP(n.p,Date.now()).label} — last ${fmtAgo(n.last)}`:`Still no contact with ${capName(n.p)}`);
+    else if(n.kind==="yourturn") parts.push(`Your turn to reach out to ${capName(n.p)}`);
+    else if(n.kind==="deepen") parts.push(`Go deeper with ${capName(n.p)} this time`);
+    else if(n.kind==="introduce") parts.push(`Get ${capName(n.p)} and ${capName(n.q)} together`);
+  }
+  const g=streakData(), G=weekGoal();
+  if(!parts.length) parts.push(g.done?`Week's goal done — streak ${g.streak} 🔥`:`${G-g.cur} meaningful conversation${G-g.cur===1?"":"s"} to go this week`);
+  return {title:"Samvar", body:parts.slice(0,3).join(" · ")};
+}
+function nextNudgeTimes(count){
+  const days=NUDGE_DAYS[DB.settings.nudgeFreq||"daily"]||[]; if(!days.length) return [];
+  const [hh,mm]=(DB.settings.nudgeTime||"09:00").split(":").map(Number);
+  const out=[], d=new Date(); d.setHours(hh,mm,0,0);
+  if(d.getTime()<=Date.now()) d.setDate(d.getDate()+1);
+  while(out.length<count){ if(days.includes(d.getDay())) out.push(d.getTime()); d.setDate(d.getDate()+1); }
+  return out;
 }
 function renderInsights(){
   const s=windowStats(Date.now(),30);
@@ -900,6 +1057,10 @@ document.getElementById("parseBtn").addEventListener("click",async ()=>{
 document.querySelectorAll("#goalSeg button").forEach(b=>b.addEventListener("click",()=>{ DB.settings.weekGoal=+b.dataset.g; saveDB(); renderAll(); }));
 document.querySelectorAll("#nudgeSeg button").forEach(b=>b.addEventListener("click",()=>{ DB.settings.nudgeFreq=b.dataset.nf; DB.settings.nudgeSet=true; saveDB(); renderAll(); }));
 document.getElementById("nudgeTime").addEventListener("change",e=>{ DB.settings.nudgeTime=e.target.value; DB.settings.nudgeSet=true; saveDB(); renderAll(); });
+document.getElementById("nudgePreview").addEventListener("click",()=>{
+  const n=nudgeText(), next=nextNudgeTimes(1)[0];
+  document.getElementById("nudgePreviewOut").innerHTML=`<b>${esc(n.title)}</b> — ${esc(n.body)}<br>${next?`Next one ${new Date(next).toLocaleString("en-GB",{weekday:"short",hour:"2-digit",minute:"2-digit"})}.`:"Nudges are off."}`;
+});
 let peopleView="list";
 function showPeopleView(v){
   peopleView=v;
