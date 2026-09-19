@@ -9,3 +9,4 @@ ios/App/App.xcodeproj/project.xcworkspace/xcuserdata/
 *.xcuserstate
 .env
 .env.*
+branding/*-preview.png

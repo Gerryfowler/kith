@@ -1442,3 +1442,23 @@ function switchPage(p){
 document.querySelectorAll("nav.tabs button").forEach(b=>b.addEventListener("click",()=>switchPage(b.dataset.p)));
 function renderAll(){ renderHome(); renderTriage(); renderPeople(); renderNetwork(); renderInsights(); renderSettingsUI(); }
 switchPage("home");
+
+/* ---------- first-run welcome ---------- */
+function showWelcome(){
+  if(DB.settings.welcomed || DB.people.length || DB.interactions.length) return;
+  const dlg=document.createElement("dialog");
+  dlg.innerHTML=`<div style="text-align:center;padding:6px 0 2px;font-size:40px">🌱</div>
+    <h2 style="font-size:22px;text-align:center;letter-spacing:-.02em">Keep your people close</h2>
+    <p class="hint" style="text-align:center;margin:4px 0 14px;font-size:14px">Most of us don’t lose friends on purpose — we just go quiet. Samvar makes sure you don’t.</p>
+    <div class="factline" style="font-size:14px;margin-top:8px"><span class="fk">◎</span><span>Put the people who matter in <b>circles</b>, each with its own rhythm.</span></div>
+    <div class="factline" style="font-size:14px"><span class="fk">🎙</span><span>After you see someone, <b>just say what happened</b>. Samvar remembers the details.</span></div>
+    <div class="factline" style="font-size:14px"><span class="fk">☀️</span><span>Each morning, a few <b>nudges</b> on who to reach out to — with the first line drafted.</span></div>
+    <p class="hint" style="text-align:center;margin:12px 0 10px">Everything stays on your phone. No account needed.</p>
+    <button class="btn" id="wGo">Add my people</button>
+    <button class="btn ghost small" id="wImport" style="width:100%;margin-top:8px">I have a backup file</button>`;
+  document.body.appendChild(dlg); dlg.showModal();
+  const done=()=>{ DB.settings.welcomed=true; saveDB(); dlg.close(); dlg.remove(); };
+  dlg.querySelector("#wGo").addEventListener("click",()=>{ done(); switchPage("people"); document.getElementById("newPersonName").focus(); });
+  dlg.querySelector("#wImport").addEventListener("click",()=>{ done(); document.getElementById("importFile").click(); });
+}
+showWelcome();
