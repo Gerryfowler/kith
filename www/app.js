@@ -67,12 +67,12 @@ function healthOfP(p, asOf){ // status = time since last contact vs the circle's
   if(!l){
     const age=p.added?((asOf-p.added)/DAY):999;
     if(age<=(t.cadence||60)) return {k:"new",label:"new",color:"var(--accent)"}; // grace period
-    return {k:"critical",label:"no contact yet",color:"var(--critical)"};
+    return {k:"critical",label:"reconnect now",color:"var(--critical)"}; // past the grace period with no contact
   }
+  // Four levels: new (grace period) → excellent → slipping → reconnect now
   const r=((asOf-l)/DAY)/(t.cadence||60);
   if(r<=0.9) return {k:"good",label:"excellent",color:"var(--good)"};      // inner: quiet until ~day 6
   if(r<=1.8) return {k:"warn",label:"slipping",color:"var(--warn)"};
-  if(r<=3)   return {k:"serious",label:"reconnect now",color:"var(--serious)"};
   return {k:"critical",label:"reconnect now",color:"var(--critical)"};
 }
 function lastContact(p, asOf){
