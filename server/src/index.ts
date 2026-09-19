@@ -28,7 +28,7 @@ const Interaction = z.object({
   new_people: z.array(z.string()),
   initiator: z.enum(["me", "them", "mutual"]),
   depth: z.number().int(),
-  channel: z.enum(["inperson", "video", "call", "message"]),
+  channel: z.enum(["inperson", "call", "message"]),
   date: z.string(),
   place: z.string(),
   summary: z.string(),

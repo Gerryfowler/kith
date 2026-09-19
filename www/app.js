@@ -10,7 +10,7 @@ let memStore=null;
 function migrate(db){
   db.candidates=(db.candidates||[]).map(c=>typeof c==="string"?{name:c}:c);
   db.geo=db.geo||{};
-  (db.interactions||[]).forEach(x=>{ if(x.depth>3) x.depth=3; }); // old "Deep" folds into Substantive
+  (db.interactions||[]).forEach(x=>{ if(x.depth>3) x.depth=3; if(x.channel==="video") x.channel="call"; }); // old "Deep" → Substantive; old "Video" → Call
   db.settings=Object.assign({weekGoal:3,nudgeFreq:"daily",nudgeTime:"09:00"},db.settings||{});
   return db;
 }
@@ -27,12 +27,12 @@ let DB=loadDB();
 
 /* ---------- model constants ---------- */
 const TIERS={
-  inner:{label:"Inner circle", cadence:7,  halflife:14, weight:1.2},   // ~weekly
-  invest:{label:"Invest",      cadence:21, halflife:30, weight:1.5},   // every 2-4 weeks
-  warm:{label:"Keep warm",     cadence:60, halflife:75, weight:0.7},   // every 1-3 months
+  inner:{label:"Inner",    cadence:7,  halflife:14, weight:1.2},   // ~weekly
+  invest:{label:"Close",    cadence:21, halflife:30, weight:1.5},   // every 2-4 weeks
+  warm:{label:"Friendly",  cadence:60, halflife:75, weight:0.7},   // every 1-3 months
   notnow:{label:"Not now",     cadence:0,  halflife:0,  weight:0}
 };
-const CHANNELS={inperson:{label:"In person",base:10},video:{label:"Video",base:6},call:{label:"Call",base:5},message:{label:"Message",base:2}};
+const CHANNELS={inperson:{label:"In person",base:10},call:{label:"Call",base:5},message:{label:"Message",base:2}};
 const DEPTHS=[
   {n:1,label:"Logistical",mult:1},
   {n:2,label:"Friendly",mult:2.5},
@@ -70,10 +70,10 @@ function healthOfP(p, asOf){ // status = time since last contact vs the circle's
     return {k:"critical",label:"no contact yet",color:"var(--critical)"};
   }
   const r=((asOf-l)/DAY)/(t.cadence||60);
-  if(r<=0.9) return {k:"good",label:"healthy",color:"var(--good)"};      // inner: quiet until ~day 6
-  if(r<=1.8) return {k:"warn",label:"fading",color:"var(--warn)"};
-  if(r<=3)   return {k:"serious",label:"at risk",color:"var(--serious)"};
-  return {k:"critical",label:"cold",color:"var(--critical)"};
+  if(r<=0.9) return {k:"good",label:"excellent",color:"var(--good)"};      // inner: quiet until ~day 6
+  if(r<=1.8) return {k:"warn",label:"slipping",color:"var(--warn)"};
+  if(r<=3)   return {k:"serious",label:"reconnect now",color:"var(--serious)"};
+  return {k:"critical",label:"reconnect now",color:"var(--critical)"};
 }
 function lastContact(p, asOf){
   let last=null;
@@ -131,7 +131,7 @@ const INIT_ME=/\b(i (called|rang|phoned|messaged|texted|emailed|invited|organise
 const INIT_THEM=/\b((s?he|they) (called|rang|phoned|messaged|texted|emailed|invited|organised|organized|arranged|reached out|suggested|set (it )?up)|called me|rang me|texted me|messaged me|invited me|reached out to me|(his|her|their) (idea|suggestion|invite))\b/i;
 const CHAN_CUES=[
   {re:/\b(dinner|lunch|coffee|drinks|in person|met (up|with)|walk|breakfast|pub|party|came (over|round)|visit)\b/i, c:"inperson"},
-  {re:/\b(facetime|zoom|video ?call|teams|meet)\b/i, c:"video"},
+  {re:/\b(facetime|zoom|video ?call|teams|meet)\b/i, c:"call"},
   {re:/\b(called|rang|phoned|phone call|spoke on the phone|call with)\b/i, c:"call"},
   {re:/\b(text|whatsapp|message|emailed|email|dm|voice note)\b/i, c:"message"}
 ];
@@ -243,7 +243,7 @@ Each object:
  "new_people":[names mentioned but NOT in the known list],
  "initiator":"me"|"them"|"mutual",  // from the note-writer's perspective; "mutual" for planned/recurring/unclear
  "depth":1|2|3,  // 1=logistical (admin, scheduling, transactions); 2=friendly (light catch-up, banter, pleasant social contact); 3=substantive (real topics discussed properly — advice, plans, worries, emotions, meaning)
- "channel":"inperson"|"video"|"call"|"message",
+ "channel":"inperson"|"call"|"message",  // video calls count as "call"
  "date":"YYYY-MM-DD",  // resolve 'yesterday', 'last night', 'this morning', weekday names, relative to today's date given
  "place":"place mentioned in the note (restaurant, area, town) or empty string",
  "summary":"<12 words capturing the interaction",
@@ -339,7 +339,7 @@ async function aiParse(text){
       place:String(o.place||"").slice(0,80),
       initiator:INITS[o.initiator]?o.initiator:"mutual",
       depth:Math.min(3,Math.max(1,+o.depth||2)),
-      channel:CHANNELS[o.channel]?o.channel:"inperson", ts};
+      channel:o.channel==="video"?"call":(CHANNELS[o.channel]?o.channel:"inperson"), ts};
   });
 }
 
@@ -657,7 +657,7 @@ function renderHome(){
     return `<div class="person">${av(names)}
       <div><div class="nm">${esc(names||"(no one tagged)")}</div>
       <div class="meta">${DEPTHS[x.depth-1].label} · ${CHANNELS[x.channel].label} · ${INITS[x.initiator].label} · ${fmtAgo(x.ts)}${x.place?` · 📍 ${esc(x.place)}`:""}</div></div>
-      <div class="spacer"></div><span class="badge">+${Math.round(interactionPoints(x))}</span><button class="xdel" data-edit="${x.id}">✎</button><button class="xdel" data-x="${x.id}">✕</button></div>`;
+      <div class="spacer"></div><span class="badge">+${Math.round(interactionPoints(x))} smiles</span><button class="xdel" data-edit="${x.id}">✎</button><button class="xdel" data-x="${x.id}">✕</button></div>`;
   }).join(""):`<div class="empty">Your logged interactions appear here.</div>`;
   rec.querySelectorAll("[data-edit]").forEach(b=>b.addEventListener("click",()=>editInteraction(b.dataset.edit)));
   rec.querySelectorAll("[data-x]").forEach(b=>b.addEventListener("click",()=>{
@@ -697,9 +697,9 @@ function nudges(){
   for(const p of DB.people){
     const n=history(p).filter(x=>now-x.ts<=60*DAY).length;
     if(p.tier==="warm" && n>=3) out.push({kind:"promote", key:"promote:"+p.id, p, to:"invest", urgency:0.6,
-      why:`You've seen ${esc(capName(p))} ${n} times in two months — more than a Keep-warm rhythm. Move to Invest?`});
+      why:`You've seen ${esc(capName(p))} ${n} times in two months — more than a Friendly rhythm. Move to Close?`});
     else if(p.tier==="invest" && n>=6) out.push({kind:"promote", key:"promote:"+p.id, p, to:"inner", urgency:0.6,
-      why:`${esc(capName(p))} is in your life almost weekly. Inner circle?`});
+      why:`${esc(capName(p))} is in your life almost weekly. Move to Inner?`});
   }
   const {pairs}=coData(), adj={};
   for(const k of pairs.keys()){ const [a,b]=k.split("|"); (adj[a]=adj[a]||new Set()).add(b); (adj[b]=adj[b]||new Set()).add(a); }
@@ -860,7 +860,8 @@ function nudgeText(){
   const parts=[];
   for(const b of upcomingBirthdays(3)) parts.push(`🎂 ${capName(b.p)}'s birthday ${b.days===0?"today":b.days===1?"tomorrow":"in "+b.days+" days"}`);
   for(const n of nudges().slice(0,2)){
-    if(n.kind==="overdue") parts.push(n.last?`${capName(n.p)} is ${healthOfP(n.p,Date.now()).label} — last ${fmtAgo(n.last)}`:`Still no contact with ${capName(n.p)}`);
+    if(n.kind==="overdue"){ const lab=healthOfP(n.p,Date.now()).label;
+      parts.push(!n.last?`Still no contact with ${capName(n.p)}`:lab==="reconnect now"?`Reconnect with ${capName(n.p)} now — last ${fmtAgo(n.last)}`:`${capName(n.p)} is ${lab} — last ${fmtAgo(n.last)}`); }
     else if(n.kind==="yourturn") parts.push(`Your turn to reach out to ${capName(n.p)}`);
     else if(n.kind==="deepen") parts.push(`Go deeper with ${capName(n.p)} this time`);
     else if(n.kind==="introduce") parts.push(`Get ${capName(n.p)} and ${capName(n.q)} together`);
@@ -940,7 +941,7 @@ function renderPeople(){
     }).join("");
     html+=`</div>`;
   }
-  el.innerHTML=html||`<div class="card empty">Add the people who matter — start with your inner circle (≈5) and the people you want to invest in.</div>`;
+  el.innerHTML=html||`<div class="card empty">Add the people who matter — start with your Inner circle (≈5), then the Close friends you want to see more of.</div>`;
   el.querySelectorAll(".person").forEach(row=>row.addEventListener("click",()=>personSheet(row.dataset.pid)));
 }
 function personSheet(pid){
@@ -1015,7 +1016,7 @@ function askTier(name, cb){
   const dlg=document.createElement("dialog");
   dlg.innerHTML=`<h2 style="font-size:17px">Which circle is ${esc(name)} in?</h2>
     <div class="seg" style="margin-top:12px">${Object.entries(TIERS).map(([k,t])=>`<button data-tier="${k}">${t.label}</button>`).join("")}</div>
-    <p class="hint">Inner ≈ your closest ~5 · Invest = actively building · Keep warm = don’t lose touch · Not now = tracked but no nudges.</p>`;
+    <p class="hint">Inner ≈ your closest ~5 · Close = friends you’re actively building · Friendly = don’t lose touch · Not now = tracked but no nudges.</p>`;
   document.body.appendChild(dlg); dlg.showModal();
   dlg.querySelectorAll("button").forEach(b=>b.addEventListener("click",()=>{ dlg.close(); dlg.remove(); cb(b.dataset.tier); }));
 }
@@ -1045,7 +1046,7 @@ function renderDrafts(){
         <button class="btn ghost small" data-gps="${di}" title="Use my location">📍</button></div></div>
       <div class="fld"><label>When</label><input type="date" data-date="${di}" value="${localDate(d.ts)}"></div>
       <div style="display:flex;gap:8px">
-        <button class="btn" data-save="${di}">Save · +${Math.round(interactionPoints(d))} pts${d.personIds.length>1?" each":""}</button>
+        <button class="btn" data-save="${di}">Save · +${Math.round(interactionPoints(d))} smiles${d.personIds.length>1?" each":""}</button>
         <button class="btn ghost small" data-discard="${di}">Discard</button></div>
     </div>`;
   }).join("");

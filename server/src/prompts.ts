@@ -5,7 +5,7 @@ Each object:
  "new_people":[names mentioned but NOT in the known list],
  "initiator":"me"|"them"|"mutual",  // from the note-writer's perspective; "mutual" for planned/recurring/unclear
  "depth":1|2|3,  // 1=logistical (admin, scheduling, transactions); 2=friendly (light catch-up, banter, pleasant social contact); 3=substantive (real topics discussed properly — advice, plans, worries, emotions, meaning)
- "channel":"inperson"|"video"|"call"|"message",
+ "channel":"inperson"|"call"|"message",  // video calls (FaceTime, Zoom, Teams) count as "call"
  "date":"YYYY-MM-DD",  // resolve 'yesterday', 'last night', 'this morning', weekday names, relative to today's date given
  "place":"place mentioned in the note (restaurant, area, town) or empty string",
  "summary":"<12 words capturing the interaction",

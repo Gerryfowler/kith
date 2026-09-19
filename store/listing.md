@@ -17,7 +17,7 @@ Most of us don't lose friends on purpose. We just go quiet — a busy month beco
 
 Samvar is a small, calm app that keeps that from happening.
 
-**Put your people in circles.** Inner circle, Invest, Keep warm. Each has its own natural rhythm — weekly, monthly, a few times a year — and Samvar watches the gaps so you don't have to.
+**Put your people in circles.** Inner, Close, Friendly. Each has its own natural rhythm — weekly, monthly, a few times a year — and Samvar watches the gaps so you don't have to.
 
 **Just talk.** After a coffee, a call, a long walk — dictate a sentence or two. Samvar works out who you saw, who reached out, how deep it went, and files the things worth remembering: their kid's name, the marathon they're training for, the job interview on Thursday.
 
