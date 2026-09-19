@@ -193,7 +193,7 @@ function paywallSheet(reason){
     ${reason?`<p class="hint" style="text-align:center;margin:4px 0 12px;font-size:14px">${esc(reason)}</p>`:""}
     <div class="factline" style="font-size:14px"><span class="fk">✨</span><span><b>Claude reads your notes</b> — several people in one ramble, relative dates, facts worth remembering.</span></div>
     <div class="factline" style="font-size:14px"><span class="fk">💬</span><span><b>Openers written for you</b> from what you actually know about each person.</span></div>
-    <div class="factline" style="font-size:14px"><span class="fk">☀️</span><span><b>Daily nudges</b>, birthday radar, streaks and the home-screen widget.</span></div>
+    <div class="factline" style="font-size:14px"><span class="fk">☀️</span><span><b>Daily nudges</b>, birthday radar and streaks.</span></div>
     <div class="factline" style="font-size:14px"><span class="fk">∞</span><span><b>Unlimited</b> people, notes and openers. Everything stays on your phone.</span></div>
     <button class="btn" data-buy="monthly" style="margin-top:14px">Start free trial · then £4.99 / month</button>
     <button class="btn secondary" data-buy="yearly" style="margin-top:8px">Start free trial · then £29.99 / year</button>
@@ -555,9 +555,14 @@ function exportICS(){
     ics+=`BEGIN:VEVENT\r\nUID:samvar-bday-${p.id}@samvar\r\nDTSTART;VALUE=DATE:${d}\r\nRRULE:FREQ=YEARLY\r\nSUMMARY:🎂 ${name}'s birthday\r\nDESCRIPTION:From Samvar — reach out!\r\nBEGIN:VALARM\r\nTRIGGER:PT9H\r\nACTION:DISPLAY\r\nDESCRIPTION:🎂 ${name}'s birthday today\r\nEND:VALARM\r\nEND:VEVENT\r\n`;
   }
   ics+="END:VCALENDAR\r\n";
-  const a=document.createElement("a");
-  a.href=URL.createObjectURL(new Blob([ics],{type:"text/calendar"}));
-  a.download="samvar-birthdays.ics"; a.click();
+  saveFile("samvar-birthdays.ics", ics, "text/calendar");
+}
+// Native: share sheet with a real file (WKWebView has no download support). Web: ordinary download link.
+function saveFile(name, text, mime){
+  const n=window.SamvarNative;
+  if(n && n.shareFile){ n.shareFile(name, text).catch(e=>{ if(!/cancel/i.test(String(e&&e.message))) alert("Couldn't export "+name+"."); }); return; }
+  const a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([text],{type:mime}));
+  a.download=name; a.click();
 }
 
 /* ---------- one-tap contact actions ---------- */
@@ -1114,10 +1119,13 @@ document.getElementById("parseBtn").addEventListener("click",async ()=>{
   if(!entitled()){ paywallSheet("Start your free trial to log conversations."); return; }
   const btn=document.getElementById("parseBtn");
   btn.textContent="Understanding…"; btn.disabled=true;
+  const notice=document.getElementById("aiNotice"); notice.style.display="none";
   try{ drafts=await aiParse(text); if(!drafts.length){ alert("Couldn't find an interaction in that note — try describing who you spoke to."); } }
   catch(e){ drafts=parseNote(text);
     if(e instanceof QuotaError) paywallSheet("Your trial or subscription has ended — this note was filed with the simple rules instead.");
-    else if(!/Failed to fetch|NetworkError|Load failed/.test(e.message)) alert("Couldn't reach Samvar AI ("+e.message.slice(0,80)+") — used the simple rules instead."); }
+    else { const offline=/Failed to fetch|NetworkError|Load failed/.test(e.message);
+      notice.textContent=offline?"Samvar AI is unreachable right now, so this note was filed with the simple rules — check the details below.":"Couldn't reach Samvar AI ("+e.message.slice(0,80)+") — filed with the simple rules instead.";
+      notice.style.display="block"; } }
   finally{ btn.textContent="Review & score"; btn.disabled=false; }
   renderDrafts();
   document.getElementById("drafts").scrollIntoView({behavior:"smooth"});
@@ -1143,7 +1151,9 @@ function initNativeUI(){
     if(!entitled()){ paywallSheet("Start your free trial to add people."); return; }
     try{ const c=await n.pickContact(); if(!c) return;
       if(DB.people.some(p=>p.name.toLowerCase()===c.name.toLowerCase())){ alert(c.name+" is already in your circles."); return; }
-      askTier(c.name, tier=>{ DB.people.push({id:uid(),name:c.name,tier,aliases:[],added:Date.now(),tel:c.tel,addr:c.addr}); saveDB(); renderAll(); n.haptic("success"); });
+      askTier(c.name, tier=>{
+        const facts=c.birthday?[{f:"birthday "+c.birthday,kind:"date",ts:Date.now()}]:[];
+        DB.people.push({id:uid(),name:c.name,tier,aliases:[],added:Date.now(),tel:c.tel,addr:c.addr,email:c.email,facts}); saveDB(); renderAll(); n.haptic("success"); });
     }catch(e){ /* cancelled */ }
   };
   document.getElementById("contactsHint").textContent="Add from Contacts brings the name, number and address across — only for the people you pick.";
@@ -1298,9 +1308,7 @@ if(navigator.contacts && navigator.contacts.select){
 
 /* ---------- backup ---------- */
 document.getElementById("exportBtn").addEventListener("click",()=>{
-  const blob=new Blob([JSON.stringify(DB,null,1)],{type:"application/json"});
-  const a=document.createElement("a"); a.href=URL.createObjectURL(blob);
-  a.download=`samvar-backup-${new Date().toISOString().slice(0,10)}.json`; a.click();
+  saveFile(`samvar-backup-${new Date().toISOString().slice(0,10)}.json`, JSON.stringify(DB,null,1), "application/json");
 });
 document.getElementById("importFile").addEventListener("change",e=>{
   const f=e.target.files[0]; if(!f) return;

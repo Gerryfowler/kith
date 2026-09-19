@@ -80,6 +80,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
 .btn.ghost{background:transparent;color:var(--ink-2);border:1px solid var(--ring);font-weight:600}
 .btn.danger{background:transparent;color:var(--critical);border:1px solid var(--critical)}
 textarea,input[type=text],input[type=date],input[type=search],input[type=tel],input[type=time],input[type=password]{
+  width:100%;max-width:100%;min-width:0;box-sizing:border-box;
   width:100%;font-family:inherit;font-size:16px;color:var(--ink);
   background:var(--page);border:1px solid var(--ring);border-radius:12px;padding:12px}
 textarea{min-height:110px;resize:vertical;line-height:1.45}
@@ -129,3 +130,5 @@ nav.tabs button.on{color:var(--accent)}
 dialog{border:none;border-radius:18px;background:var(--surface);color:var(--ink);max-width:560px;width:92vw;padding:18px}
 dialog::backdrop{background:rgba(0,0,0,.45)}
 .badge{font-size:11px;font-weight:800;padding:3px 8px;border-radius:999px;background:var(--page);border:1px solid var(--ring);color:var(--ink-2)}
+
+input[type=date],input[type=time]{-webkit-appearance:none;appearance:none;display:block}

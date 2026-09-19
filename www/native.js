@@ -3,9 +3,11 @@
 (function(){
   const Cap=window.Capacitor;
   if(!Cap || !Cap.isNativePlatform || !Cap.isNativePlatform()) return;
-  const reg=n=>{ try{ return Cap.registerPlugin(n); }catch(e){ return null; } };
+  // No bundler: window.Capacitor is the injected native bridge, which exposes native plugins on
+  // Capacitor.Plugins and has no registerPlugin. Fall back to registerPlugin only if a runtime provides it.
+  const reg=n=>{ try{ if(Cap.Plugins&&Cap.Plugins[n]) return Cap.Plugins[n]; return Cap.registerPlugin?Cap.registerPlugin(n):null; }catch(e){ return null; } };
   const LocalNotifications=reg("LocalNotifications"), Contacts=reg("Contacts"), Purchases=reg("Purchases"),
-        Haptics=reg("Haptics"), Share=reg("Share"), App=reg("App"), StatusBar=reg("StatusBar");
+        Haptics=reg("Haptics"), Share=reg("Share"), App=reg("App"), StatusBar=reg("StatusBar"), Filesystem=reg("Filesystem");
 
   const RC_IOS_KEY="appl_REPLACE_WITH_REVENUECAT_PUBLIC_IOS_KEY";
   let rcReady=false;
@@ -39,13 +41,16 @@
     },
     async pickContact(){
       if(!Contacts) return null;
-      const r=await Contacts.pickContact({projection:{name:true,phones:true,postalAddresses:true}});
+      const r=await Contacts.pickContact({projection:{name:true,phones:true,postalAddresses:true,emails:true,birthday:true}});
       const c=r && r.contact; if(!c) return null;
       const name=c.name && (c.name.display || [c.name.given,c.name.family].filter(Boolean).join(" "));
       const tel=c.phones && c.phones[0] && c.phones[0].number;
       const a=c.postalAddresses && c.postalAddresses[0];
       const addr=a ? [a.street,a.city,a.postcode].filter(Boolean).join(" ") : undefined;
-      return name ? {name, tel:tel||undefined, addr:addr||undefined} : null;
+      const email=c.emails && c.emails[0] && c.emails[0].address;
+      const b=c.birthday, MONTHS=["January","February","March","April","May","June","July","August","September","October","November","December"];
+      const birthday=(b && b.day && b.month) ? `${b.day} ${MONTHS[b.month-1]}` : undefined;
+      return name ? {name, tel:tel||undefined, addr:addr||undefined, email:email||undefined, birthday} : null;
     },
     async purchase(plan){
       await rc();
@@ -61,7 +66,13 @@
       if(!Haptics) return;
       try{ if(kind==="success") await Haptics.notification({type:"SUCCESS"}); else await Haptics.impact({style:kind==="heavy"?"HEAVY":"LIGHT"}); }catch(e){}
     },
-    async share(text){ if(Share) await Share.share({text}); }
+    async share(text){ if(Share) await Share.share({text}); },
+    // WKWebView ignores <a download>; write to the cache dir and hand the file to the share sheet instead.
+    async shareFile(name, text){
+      if(!Filesystem||!Share) throw new Error("no filesystem");
+      const r=await Filesystem.writeFile({path:name, data:text, directory:"CACHE", encoding:"utf8"});
+      await Share.share({title:name, url:r.uri});
+    }
   };
 
   if(StatusBar && StatusBar.setStyle) StatusBar.setStyle({style:document.documentElement.dataset.theme==="dark"?"DARK":"LIGHT"}).catch(()=>{});

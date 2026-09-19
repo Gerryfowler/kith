@@ -44,6 +44,8 @@ npx cap sync ios
 
 then build in Xcode. (`www/` is copied into the app bundle; no bundler step — it is plain HTML/JS.)
 
+`ios/App/App/public` is generated and gitignored, so a stale copy is easy to ship: always run `npx cap copy ios` (or `sync`) before any build, including the command-line check below. Because there is no bundler, `window.Capacitor` is only the injected native bridge: native plugins are reached through `Capacitor.Plugins.<Name>` (see `www/native.js`), not `registerPlugin`.
+
 ## Versions that are known to work together (Sept 2026)
 
 Xcode 27 · Capacitor 8.5 · iOS deployment target 16.0 (Xcode 27 refuses anything below 15) · CocoaPods 1.17 · `@revenuecat/purchases-capacitor` 13.x (needs Capacitor ≥ 8). If `pod install` complains about incompatible versions after a plugin upgrade, delete `ios/App/Podfile.lock` and run `pod install --repo-update`.

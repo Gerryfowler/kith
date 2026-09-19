@@ -3,7 +3,7 @@
   "appName": "Samvar",
   "webDir": "www",
   "ios": {
-    "contentInset": "automatic",
+    "contentInset": "never",
     "scheme": "Samvar",
     "backgroundColor": "#faf6ee"
   },
