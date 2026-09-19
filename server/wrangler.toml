@@ -4,7 +4,7 @@ compatibility_date = "2026-06-01"
 compatibility_flags = ["nodejs_compat"]
 
 # Custom domain — set up in Cloudflare after the domain is registered.
-# routes = [{ pattern = "api.samvar.app", custom_domain = true }]
+routes = [{ pattern = "api.samvar.app", custom_domain = true }]
 
 [vars]
 MODEL = "claude-sonnet-5"
