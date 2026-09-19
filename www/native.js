@@ -18,7 +18,8 @@
     const info=res && res.customerInfo ? res.customerInfo : res;
     const pro=info && info.entitlements && info.entitlements.active && info.entitlements.active.pro;
     if(!pro) return {active:false};
-    return {active:true, expires:pro.expirationDate?Date.parse(pro.expirationDate):0, trial:pro.periodType==="TRIAL"};
+    const expires=pro.expirationDateMillis||(pro.expirationDate?Date.parse(pro.expirationDate):0);
+    return {active:true, expires, trial:String(pro.periodType).toUpperCase()==="TRIAL"};
   }
 
   window.SamvarNative={

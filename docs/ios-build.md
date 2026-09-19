@@ -44,6 +44,16 @@ npx cap sync ios
 
 then build in Xcode. (`www/` is copied into the app bundle; no bundler step — it is plain HTML/JS.)
 
+## Versions that are known to work together (Sept 2026)
+
+Xcode 27 · Capacitor 8.5 · iOS deployment target 16.0 (Xcode 27 refuses anything below 15) · CocoaPods 1.17 · `@revenuecat/purchases-capacitor` 13.x (needs Capacitor ≥ 8). If `pod install` complains about incompatible versions after a plugin upgrade, delete `ios/App/Podfile.lock` and run `pod install --repo-update`.
+
+Command-line build check without opening Xcode:
+
+```bash
+cd ios/App && xcodebuild -workspace App.xcworkspace -scheme App -sdk iphonesimulator -configuration Debug CODE_SIGNING_ALLOWED=NO build | grep -E "error:|BUILD"
+```
+
 ## RevenueCat
 
 Set `RC_IOS_KEY` in `www/native.js` to the **public** iOS SDK key from RevenueCat → Project → API keys. Products `samvar_pro_monthly` and `samvar_pro_yearly` must exist in App Store Connect (with a 7-day free introductory offer) and be attached to the `pro` entitlement in RevenueCat. Sandbox testers are created in App Store Connect → Users and Access → Sandbox.
