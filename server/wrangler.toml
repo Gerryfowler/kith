@@ -20,4 +20,4 @@ ALLOW_UNENTITLED = "0"   # "1" only for local dev without RevenueCat
 #   wrangler kv namespace create QUOTA   → paste the id below
 [[kv_namespaces]]
 binding = "QUOTA"
-id = "REPLACE_WITH_KV_ID"
+id = "abc03a4b9c0a4fb3b6606fbdc5876ffc"
