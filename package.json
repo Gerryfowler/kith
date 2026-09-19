@@ -10,6 +10,7 @@
     "assets": "capacitor-assets generate --ios --iconBackgroundColor '#faf6ee' --splashBackgroundColor '#faf6ee'"
   },
   "dependencies": {
+    "@capacitor-community/contacts": "^7.0.0",
     "@capacitor/app": "^7.0.0",
     "@capacitor/core": "^7.0.0",
     "@capacitor/haptics": "^7.0.0",
@@ -18,7 +19,6 @@
     "@capacitor/share": "^7.0.0",
     "@capacitor/splash-screen": "^7.0.0",
     "@capacitor/status-bar": "^7.0.0",
-    "@capacitor-community/contacts": "^7.0.0",
     "@revenuecat/purchases-capacitor": "^10.0.0"
   },
   "devDependencies": {

@@ -28,7 +28,7 @@ npx cap open ios
 
 ## In Xcode (once)
 
-1. **Signing & Capabilities** → Team = your Apple Developer account. Bundle identifier `app.samvar.ios` (change in `capacitor.config.ts` too if you pick another).
+1. **Signing & Capabilities** → Team = your Apple Developer account. Bundle identifier `app.samvar.ios` (change in `capacitor.config.json` too if you pick another).
 2. **Info.plist** — add these usage strings (Apple rejects builds that touch these APIs without them):
    - `NSContactsUsageDescription` — "Samvar lets you pick contacts to add to your circles. Only the people you choose are saved, on this phone."
    - `NSLocationWhenInUseUsageDescription` — "Used for “Near me” and to note where you saw someone. Never uploaded."
