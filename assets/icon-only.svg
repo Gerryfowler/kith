@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fdf6e9"/>
+      <stop offset="1" stop-color="#f4ecdd"/>
+    </linearGradient>
+  </defs>
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+  <!-- three circles: inner (blue), invest (orange), keep-warm (green) — partly filled like rhythm rings -->
+  <g fill="none" stroke-linecap="round" transform="rotate(-90 512 512)">
+    <circle cx="512" cy="512" r="392" stroke="#e6dfd0" stroke-width="72"/>
+    <circle cx="512" cy="512" r="392" stroke="#1baf7a" stroke-width="72" stroke-dasharray="1970 2463"/>
+    <circle cx="512" cy="512" r="286" stroke="#e6dfd0" stroke-width="72"/>
+    <circle cx="512" cy="512" r="286" stroke="#eb6834" stroke-width="72" stroke-dasharray="1527 1797"/>
+    <circle cx="512" cy="512" r="180" stroke="#e6dfd0" stroke-width="72"/>
+    <circle cx="512" cy="512" r="180" stroke="#2a78d6" stroke-width="72" stroke-dasharray="1018 1131"/>
+  </g>
+  <!-- sprout at the centre -->
+  <g fill="#2d6a3f">
+    <path d="M512 606 L512 500" stroke="#2d6a3f" stroke-width="22" stroke-linecap="round" fill="none"/>
+    <path d="M512 536 C452 540 420 496 428 452 C482 448 520 486 512 536 Z"/>
+    <path d="M512 498 C572 500 604 456 596 412 C542 408 504 448 512 498 Z"/>
+  </g>
+</svg>

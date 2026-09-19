@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2732 2732" width="2732" height="2732">
+  <rect width="2732" height="2732" fill="#faf6ee"/>
+  <g transform="translate(1366 1366) scale(0.55) translate(-512 -512)">
+    <g fill="none" stroke-linecap="round" transform="rotate(-90 512 512)">
+      <circle cx="512" cy="512" r="392" stroke="#e6dfd0" stroke-width="72"/>
+      <circle cx="512" cy="512" r="392" stroke="#1baf7a" stroke-width="72" stroke-dasharray="1970 2463"/>
+      <circle cx="512" cy="512" r="286" stroke="#e6dfd0" stroke-width="72"/>
+      <circle cx="512" cy="512" r="286" stroke="#eb6834" stroke-width="72" stroke-dasharray="1527 1797"/>
+      <circle cx="512" cy="512" r="180" stroke="#e6dfd0" stroke-width="72"/>
+      <circle cx="512" cy="512" r="180" stroke="#2a78d6" stroke-width="72" stroke-dasharray="1018 1131"/>
+    </g>
+    <g fill="#2d6a3f">
+      <path d="M512 606 L512 500" stroke="#2d6a3f" stroke-width="22" stroke-linecap="round" fill="none"/>
+      <path d="M512 536 C452 540 420 496 428 452 C482 448 520 486 512 536 Z"/>
+      <path d="M512 498 C572 500 604 456 596 412 C542 408 504 448 512 498 Z"/>
+    </g>
+  </g>
+  <text x="1366" y="1780" text-anchor="middle" font-family="-apple-system, system-ui, 'Segoe UI', sans-serif" font-size="150" font-weight="800" fill="#33302b" letter-spacing="-3">Samvar</text>
+</svg>
