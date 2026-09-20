@@ -602,7 +602,8 @@ function contactLinks(p){
   if(t) out.push({k:"call", label:"📞 Call", href:`tel:${t}`});
   if(t) out.push({k:"text", label:"💬 Text", href:`sms:${t}`});
   if(p.email) out.push({k:"email", label:"✉️ Email", href:`mailto:${p.email}`});
-  if(t){ const d=t.replace(/^\+/,"").replace(/^0/, ""); out.push({k:"wa", label:"🟢 WhatsApp", href:`https://wa.me/${t.startsWith("+")?t.slice(1):d}`, ext:true}); }
+  if(t && p.telIsMobile!==false){ const d=t.replace(/^\+/,"").replace(/^0/, ""); out.push({k:"wa", label:"🟢 WhatsApp", href:`https://wa.me/${t.startsWith("+")?t.slice(1):d}`, ext:true}); }
+  for(const x of (p.tels||[])){ const d=telDigits(x.number); if(d && d!==t) out.push({k:"call2", label:`📞 ${x.label||"Other"}`, href:`tel:${d}`}); }
   if(p.snap) out.push({k:"snap", label:"👻 Snap", href:`https://www.snapchat.com/add/${encodeURIComponent(p.snap.replace(/^@/,""))}`, ext:true});
   if(p.insta) out.push({k:"insta", label:"📸 Insta", href:`https://ig.me/m/${encodeURIComponent(p.insta.replace(/^@/,""))}`, ext:true});
   return out;
@@ -715,13 +716,13 @@ function renderHome(){
   renderRings();
 
   renderReflection();
-  // reach out today: today's pick first, then the top 3 nudges by urgency, expandable to all
+  // other nudges (the pick already lives in the "This week" card): top 3 by urgency, expandable to all
   const att=document.getElementById("homeAttention"), more=document.getElementById("suggMore");
-  const list=nudges();
+  const pick=todaysPick(nudges());
+  const list=nudges().filter(n=>!pick||n.p!==pick.p||n.kind!=="overdue");
   const shown=showAllSugg?list:list.slice(0,3);
-  const pick=todaysPick(list);
-  att.innerHTML=(pick?pickCard(pick):"")+(shown.length?shown.filter(n=>!pick||n.p!==pick.p||n.kind!=="overdue").map(nudgeCard).join(""):
-    (pick?"":`<div class="card empty">Everyone’s in rhythm — nice. Nudges appear here when someone has gone quiet longer than their circle’s rhythm.</div>`));
+  document.getElementById("attHead").style.display=list.length?"":"none";
+  att.innerHTML=shown.map(nudgeCard).join("");
   bindNudgeButtons(att);
   more.innerHTML=list.length>3?`<button class="btn ghost small" id="suggToggle" style="margin:0 0 12px">${showAllSugg?"Show fewer":`See all ${list.length}`}</button>`:"";
   more.querySelector("#suggToggle")?.addEventListener("click",()=>{ showAllSugg=!showAllSugg; renderHome(); });
@@ -805,13 +806,12 @@ function todaysPick(nudgeList){
   const od=nudgeList.find(n=>n.kind==="overdue"); if(od) return {kind:"pick",p:od.p,last:od.last,left:0,t:TIERS[od.p.tier],overdue:true};
   return best?{kind:"pick",p:best.p,last:best.last,left:best.left,t:best.t}:null;
 }
-function pickCard(n){
+function pickBlock(n){
   const p=n.p, h=healthOfP(p,Date.now()), days=Math.max(1,Math.round(n.left));
   const why=n.overdue?`Already <b>${fmtAgo(n.last)}</b> since you spoke — past the ${n.t.rhythm} rhythm for your ${n.t.label} circle.`
     :`Last contact <b>${fmtAgo(n.last)}</b>. In about <b>${days} day${days===1?"":"s"}</b> they slip out of your ${n.t.rhythm} rhythm — a small message now keeps it easy.`;
   const facts=(p.facts||[]).length?`<div class="why">💡 ${p.facts.slice(-2).map(f=>esc(f.f)).join(" · ")}</div>`:"";
-  return `<div class="card sugg" data-pid="${p.id}" data-key="pick:${p.id}" data-kind="pick" style="background:var(--tint-butter);border-color:transparent">
-    <div class="lbl" style="font-size:12px;color:var(--ink-2);font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Today's pick</div>
+  return `<div class="sugg" data-pid="${p.id}" data-key="pick:${p.id}" data-kind="pick" style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(0,0,0,.08)">
     <div style="display:flex;align-items:center;gap:10px">${av(p.name,p.photo)}
       <div><div class="nm" style="font-weight:700">${esc(p.name)}</div>
       <span class="status" style="color:${h.color}"><i style="background:${h.color}"></i>${h.label}</span></div>
@@ -945,35 +945,24 @@ async function openerSheet(p,opts={}){
 /* ---------- weekly reflection (shown Sunday & Monday) ---------- */
 function renderReflection(){
   const el=document.getElementById("reflect");
-  const ws=weekStart(Date.now()), key="encourage:"+ws;
-  if(dismissed(key)){ el.innerHTML=""; return; }
+  const ws=weekStart(Date.now());
   const xs=DB.interactions.filter(x=>x.ts>=ws && x.ts<ws+7*DAY);
   const quality=xs.filter(x=>x.depth>=2), mine=xs.filter(x=>x.initiator==="me").length;
   const named=ids=>[...new Set(ids)].map(id=>DB.people.find(p=>p.id===id)).filter(Boolean);
   const qNames=named(quality.flatMap(x=>x.personIds)).slice(0,2).map(p=>capName(p));
   const dow=new Date().getDay(), early=dow>=1&&dow<=3;
-  // a warm read on the week so far
   let line;
   if(!DB.people.length) line="Add a few people and Samvar will start noticing who you'd love to hear from.";
-  else if(!xs.length) line=early?"Fresh week. One message today is all it takes to get it moving.":"A quiet week so far — that's fine. Pick one person below and send something small.";
-  else if(quality.length) line=`Quality time with ${qNames.join(" and ")} this week 💛${mine?` — and you started ${mine} of ${xs.length}.`:"."} Keep that going.`;
-  else line=`${xs.length} catch-up${xs.length===1?"":"s"} so far this week — nice. A longer chat with someone would make it a great one.`;
-  // one concrete, doable suggestion with a "how"
-  const n=nudges().find(x=>x.p), p=n&&n.p, t=p&&TIERS[p.tier];
-  let how="";
-  if(p){
-    const fact=(p.facts||[]).slice(-1)[0];
-    const hook=fact?` Ask about ${esc(fact.f.replace(/^birthday /i,"their birthday "))}.`:"";
-    const way=p.tier==="inner"?"a call, or fix a time to see them":p.tier==="invest"?"a message with a real question":"a quick hello";
-    const since=n.last?`it's been ${fmtAgo(n.last)}`:"you haven't logged a conversation yet";
-    how=`<div class="why" style="margin-top:8px"><b>Try this:</b> ${esc(capName(p))} — ${since}. Go for ${way}.${hook}</div>`;
-  }
-  el.innerHTML=`<div class="card t-mint">
+  else if(!xs.length) line=early?"Fresh week. One message today is all it takes to get it moving.":"A quiet week so far — that's fine. One small message changes it.";
+  else if(quality.length) line=`Quality time with ${qNames.join(" and ")} this week 💛${mine?` — and you started ${mine} of ${xs.length}.`:"."} Lovely. Keep it rolling:`;
+  else line=`${xs.length} catch-up${xs.length===1?"":"s"} so far this week — nice work. Next up:`;
+  const pick=todaysPick(nudges());
+  el.innerHTML=`<div class="card t-mint" style="padding-bottom:12px">
     <div class="lbl" style="font-size:12px;color:var(--ink-2);font-weight:600;text-transform:uppercase;letter-spacing:.05em">This week</div>
-    <div style="font-size:15px;margin-top:6px;line-height:1.5">${line}</div>${how}
-    <div style="display:flex;gap:8px;margin-top:10px">${p?`<button class="btn small" id="reflectGo">✨ Draft an opener</button>`:""}<button class="btn ghost small" id="reflectOk">Got it</button></div></div>`;
-  el.querySelector("#reflectGo")?.addEventListener("click",()=>{ if(!entitled()){ paywallSheet("Openers are part of Samvar — start your free trial."); return; } openerSheet(p,{}); });
-  el.querySelector("#reflectOk").addEventListener("click",()=>{ dismiss(key,3); renderAll(); });
+    <div style="font-size:15px;margin-top:6px;line-height:1.5">${line}</div>
+    ${pick?pickBlock(pick):(DB.people.length?`<div class="why" style="margin-top:8px">Everyone's in rhythm right now — enjoy it.</div>`:"")}
+  </div>`;
+  bindNudgeButtons(el);
 }
 
 /* ---------- calendar: "you had lunch with Kate — log it?" ---------- */
@@ -1117,7 +1106,7 @@ function personSheet(pid){
         <div style="display:flex;gap:6px;margin-top:6px"><button class="btn ghost small" id="pphoto">${p.photo?"Change photo":"Add photo"}</button>${p.photo?`<button class="btn ghost small" id="pphotoRm">Remove</button>`:""}</div></div></div>
     <div class="fld"><label>Circle</label><div class="seg">${Object.entries(TIERS).map(([k,t])=>`<button data-tier="${k}" class="${p.tier===k?"on":""}">${t.label}</button>`).join("")}</div></div>
     <div class="fld"><label>Phone</label><div style="display:flex;gap:8px;align-items:center">
-      <input type="tel" id="ptel" value="${esc(p.tel||"")}" placeholder="+44 7…">
+      <input type="tel" id="ptel" value="${esc(p.tel||"")}" placeholder="Mobile, e.g. +44 7…">
       <button class="btn small" id="ptelSave">Save</button></div>
       </div>
     <div class="fld"><label>Ways to reach them</label>
@@ -1393,7 +1382,7 @@ async function contactsSheet(){
       prog.textContent=`Adding ${i+1} of ${ids.length}…`;
       const facts=c.birthday?[{f:"birthday "+c.birthday,kind:"date",ts:Date.now()}]:[];
       let photo; try{ const b64=await n.contactPhoto(c.contactId); if(b64) photo=await storePhoto(b64); }catch(e){}
-      const p={id:uid(),name:c.name,tier:pick[c.contactId],aliases:[],added:Date.now(),tel:c.tel,addr:c.addr,email:c.email,facts,photo};
+      const p={id:uid(),name:c.name,tier:pick[c.contactId],aliases:[],added:Date.now(),tel:c.tel,tels:c.tels,telIsMobile:c.telIsMobile,addr:c.addr,email:c.email,facts,photo};
       DB.people.push(p); added.push(p);
     }
     saveDB(); renderAll(); n.haptic("success"); dlg.close(); dlg.remove();

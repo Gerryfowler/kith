@@ -52,13 +52,18 @@
       return (r.contacts||[]).map(c=>{
         const name=c.name && (c.name.display || [c.name.given,c.name.family].filter(Boolean).join(" "));
         if(!name) return null;
-        const tel=c.phones && c.phones[0] && c.phones[0].number;
+        // Keep every number with its label; the main one (tel) is the mobile, which is what Text and WhatsApp need.
+        const isMobile=ph=>/mobile|iphone|cell/i.test(String(ph.type||"")+" "+String(ph.label||""));
+        const phones=(c.phones||[]).filter(ph=>ph.number).map(ph=>({label:String(ph.label||ph.type||"other").replace(/^_\$!<|>!\$_$/g,""), number:ph.number.trim(), mobile:isMobile(ph)}));
+        const main=phones.find(ph=>ph.mobile)||phones[0];
+        const tel=main && main.number;
+        const tels=phones.length>1?phones.filter(ph=>ph!==main).map(ph=>({label:ph.label,number:ph.number})):undefined;
         const a=c.postalAddresses && c.postalAddresses[0];
         const addr=a ? [a.street,a.city,a.region,a.postcode,a.country].filter(Boolean).join(", ") : undefined;
         const email=c.emails && c.emails[0] && c.emails[0].address;
         const b=c.birthday;
         const birthday=(b && b.day && b.month) ? `${b.day} ${MONTHS[b.month-1]}` : undefined;
-        return {contactId:c.contactId, name, tel:tel||undefined, addr, email:email||undefined, birthday};
+        return {contactId:c.contactId, name, tel:tel||undefined, tels, telIsMobile:!!(main&&main.mobile), addr, email:email||undefined, birthday};
       }).filter(Boolean).sort((x,y)=>x.name.localeCompare(y.name));
     },
     async contactPhoto(contactId){
