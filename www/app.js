@@ -260,9 +260,11 @@ function nominatim(url){
     .then(r=>r&&r.ok?r.json():null).catch(()=>null);
   const p=geoQueue.then(run); geoQueue=p.catch(()=>{}); return p;
 }
+function addrLine(a){ return String(a||"").split(/\n+/).map(x=>x.trim()).filter(Boolean).join(", "); }
+function addrHtml(a){ return String(a||"").split(/\n+/).map(x=>esc(x.trim())).filter(Boolean).join("<br>"); }
 function shortPlace(dn){ return String(dn||"").split(",").map(s=>s.trim()).slice(0,2).join(", "); }
 async function geocode(addr){
-  const key=addr.trim().toLowerCase(); if(!key) return null;
+  addr=addrLine(addr); const key=addr.toLowerCase(); if(!key) return null;
   if(key in DB.geo && DB.geo[key]!==null) return DB.geo[key]; // cache hits only; failures are retried
   const look=async q=>{ const j=await nominatim("https://nominatim.openstreetmap.org/search?format=json&limit=1&q="+encodeURIComponent(q));
     return (j&&j[0])?{lat:+j[0].lat,lon:+j[0].lon,label:shortPlace(j[0].display_name)}:null; };
@@ -270,7 +272,7 @@ async function geocode(addr){
   // Not found: let Samvar AI tidy the address (expand abbreviations, infer a missing country) and try once more.
   if(!hit && entitled() && !getApiKey()){
     try{
-      const hints=DB.people.map(p=>p.addr).filter(a=>a&&a.trim().toLowerCase()!==key).slice(0,6);
+      const hints=DB.people.map(p=>addrLine(p.addr)).filter(a=>a&&a.toLowerCase()!==key).slice(0,6);
       const r=await samvarAI("/v1/address",{address:addr, hints, locale:navigator.language||""});
       if(r&&r.address&&r.confidence!=="low"&&r.address.trim().toLowerCase()!==key){ hit=await look(r.address); if(hit) hit.fixed=r.address; }
     }catch(e){ /* offline or no plan: plain lookup result stands */ }
@@ -579,18 +581,16 @@ function telDigits(t){ return String(t||"").replace(/[^\d+]/g,""); }
 // One-tap ways to reach someone. External https links open the app via target=_blank (Capacitor hands them to iOS).
 function contactLinks(p){
   const t=telDigits(p.tel), out=[];
-  if(t) out.push({k:"call", label:"📞 Call", href:`tel:${t}`});
-  if(t) out.push({k:"text", label:"💬 Text", href:`sms:${t}`});
-  if(p.email) out.push({k:"email", label:"✉️ Email", href:`mailto:${p.email}`});
-  if(t && p.telIsMobile!==false){ const d=t.replace(/^\+/,"").replace(/^0/, ""); out.push({k:"wa", label:"🟢 WhatsApp", href:`https://wa.me/${t.startsWith("+")?t.slice(1):d}`, ext:true}); }
-  for(const x of (p.tels||[])){ const d=telDigits(x.number); if(d && d!==t) out.push({k:"call2", label:`📞 ${x.label||"Other"}`, href:`tel:${d}`}); }
-  if(p.snap) out.push({k:"snap", label:"👻 Snap", href:`https://www.snapchat.com/add/${encodeURIComponent(p.snap.replace(/^@/,""))}`, ext:true});
-  if(p.insta) out.push({k:"insta", label:"📸 Insta", href:`https://ig.me/m/${encodeURIComponent(p.insta.replace(/^@/,""))}`, ext:true});
+  if(t) out.push({k:"call", label:"📞", title:"Call", href:`tel:${t}`});
+  if(t) out.push({k:"text", label:"💬", title:"Text", href:`sms:${t}`});
+  if(p.email) out.push({k:"email", label:"✉️", title:"Email", href:`mailto:${p.email}`});
+  if(t && p.telIsMobile!==false){ const d=t.replace(/^\+/,"").replace(/^0/, ""); out.push({k:"wa", label:"🟢", title:"WhatsApp", href:`https://wa.me/${t.startsWith("+")?t.slice(1):d}`, ext:true}); }
+  for(const x of (p.tels||[])){ const d=telDigits(x.number); if(d && d!==t) out.push({k:"call2", label:`📞 ${x.label||"Other"}`, title:`Call ${x.label||"other"}`, href:`tel:${d}`}); }
   return out;
 }
 function contactBtns(p){
   const links=contactLinks(p); if(!links.length) return "";
-  return links.map((l,i)=>`<a class="btn ${i?"ghost ":""}small" href="${l.href}"${l.ext?' target="_blank" rel="noopener"':""}>${l.label}</a>`).join("");
+  return links.map((l,i)=>`<a class="btn ${i?"ghost ":""}small" href="${l.href}" title="${esc(l.title||"")}" aria-label="${esc(l.title||"")}"${l.ext?' target="_blank" rel="noopener"':""}>${l.label}</a>`).join("");
 }
 
 /* ---------- rendering ---------- */
@@ -607,6 +607,17 @@ async function photoSrc(ref){
   const n=window.SamvarNative; if(!n||!n.photoUrl) return null;
   try{ const u=await n.photoUrl(ref); if(u) photoCache[ref]=u; return u; }catch(e){ return null; }
 }
+function showPhotoFull(src){
+  // A modal <dialog> so it sits above any open profile/edit sheet (they live on the top layer too).
+  const v=document.createElement("dialog"); v.className="photoview";
+  v.innerHTML=`<img src="${src}" alt=""><div class="photoview-hint">Tap to close</div>`;
+  v.addEventListener("click",()=>{ v.close(); v.remove(); }); document.body.appendChild(v); v.showModal();
+}
+document.addEventListener("click",ev=>{
+  const el=ev.target.closest(".avatar[data-photo]"); if(!el) return;
+  const src=photoSrcSync(el.dataset.photo); if(!src) return;
+  ev.stopPropagation(); ev.preventDefault(); showPhotoFull(src);
+},true);
 function hydratePhotos(root){
   (root||document).querySelectorAll("[data-photo]").forEach(async el=>{
     const src=await photoSrc(el.dataset.photo); if(!src||!el.isConnected) return;
@@ -834,7 +845,7 @@ function bindNudgeButtons(root){
     card.querySelectorAll("button[data-act]").forEach(b=>b.addEventListener("click",()=>{
       const act=b.dataset.act;
       if(act==="log"){ switchPage("log");
-        const ta=document.getElementById("logText"); ta.value=`With ${p.name}, I reached out — `; ta.focus(); }
+        const ta=document.getElementById("logText"); ta.value=`With ${p.name} — `; ta.focus(); }
       if(act==="snooze"){ p.snoozeUntil=Date.now()+7*DAY; saveDB(); renderAll(); }
       if(act==="dismiss"){ dismiss(card.dataset.key,+b.dataset.days||14); renderAll(); }
       if(act==="promote"&&TIERS[b.dataset.to]){ p.tier=b.dataset.to; saveDB(); renderAll(); }
@@ -1124,19 +1135,17 @@ function personSheet(pid){
   const sec=(title,body)=>`<div class="psec"><div class="sect" style="margin:0 0 8px">${title}</div>${body}</div>`;
   dlg.innerHTML=`<div style="display:flex;align-items:center;gap:12px;margin-bottom:4px">
       <div style="transform:scale(1.5);transform-origin:left center">${av(p.name,p.photo)}</div>
-      <div style="margin-left:14px"><h2 style="font-size:18px;margin:0">${esc(p.name)}</h2>
-        <div style="display:flex;gap:6px;margin-top:6px"><button class="btn ghost small" id="pphoto">${p.photo?"Change photo":"Add photo"}</button>${p.photo?`<button class="btn ghost small" id="pphotoRm">Remove</button>`:""}</div></div></div>
+      <div style="margin-left:14px;min-width:0;flex:1"><h2 style="font-size:18px;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(p.name)}</h2>
+        <div style="display:flex;gap:6px;margin-top:6px"><button class="btn ghost small" id="pphoto">${p.photo?"Change photo":"Add photo"}</button>${p.photo?`<button class="btn ghost small" id="pphotoRm">Remove</button>`:""}</div></div>
+      <button class="btn small" id="dlgCloseTop" style="flex:none">Done</button></div>
     ${sec("Circle",`<div class="seg" style="margin:0">${Object.entries(TIERS).map(([k,t])=>`<button data-tier="${k}" class="${p.tier===k?"on":""}">${t.label}</button>`).join("")}</div>`)}
-    ${sec("Reach them",`${contactBtns(p)?`<div class="btngrid">${contactBtns(p)}</div>`:`<div class="hint" style="margin:0 0 8px">Add a number or a handle to get one-tap buttons here and on suggestions.</div>`}
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:${contactBtns(p)?"10":"0"}px">
+    ${sec("Reach them",`${contactBtns(p)?`<div class="btngrid reachrow">${contactBtns(p)}</div>`:`<div class="hint" style="margin:0 0 8px">Add a mobile number to get one-tap Call, Text and WhatsApp buttons here and on suggestions.</div>`}
+      <div style="display:flex;gap:8px;margin-top:${contactBtns(p)?"10":"0"}px">
         <input type="tel" id="ptel" value="${esc(p.tel||"")}" placeholder="Mobile number">
-        <input type="email" id="pemail" value="${esc(p.email||"")}" placeholder="Email">
-        <input type="text" id="psnap" value="${esc(p.snap||"")}" placeholder="Snapchat username" autocapitalize="none">
-        <input type="text" id="pinsta" value="${esc(p.insta||"")}" placeholder="Instagram username" autocapitalize="none"></div>
-      <button class="btn small" id="phandlesSave" style="margin-top:8px">Save details</button>
-      ${p.contactId?`<div class="hint" style="margin-top:6px">Linked to Contacts — number, email, address, photo and birthday refresh automatically.</div>`:""}`)}
-    ${sec("Address / area",`<div style="display:flex;gap:8px">
-      <input type="text" id="paddr" value="${esc(p.addr||"")}" placeholder="e.g. Clapham SW4, or Zurich">
+        <button class="btn small" id="phandlesSave">Save</button></div>
+      ${p.contactId?`<div class="hint" style="margin-top:6px">Linked to Contacts — number, email, address, photo and birthday refresh automatically.</div>`:p.email?`<div class="hint" style="margin-top:6px">✉️ ${esc(p.email)}</div>`:""}`)}
+    ${sec("Address / area",`<div style="display:flex;gap:8px;align-items:flex-start">
+      <textarea id="paddr" rows="${Math.min(5,Math.max(2,String(p.addr||"").split("\n").length))}" placeholder="Street\nTown\nPostcode" style="min-height:0;resize:none;line-height:1.4">${esc(p.addr||"")}</textarea>
       <button class="btn small" id="paddrSave">Save</button></div>
       <div class="hint" id="paddrStatus">${p.loc?"📍 on the map":(p.addr?"not mapped yet — run “Put contacts on the map” in the You tab":"powers place search and “near me”")}</div>`)}
     ${sec("Worth remembering",`<div id="factList">${(p.facts&&p.facts.length)?[...p.facts].reverse().map((f,i)=>
@@ -1161,11 +1170,11 @@ function personSheet(pid){
   }));
   dlg.querySelector("#phandlesSave").addEventListener("click",()=>{
     const tel=dlg.querySelector("#ptel").value.trim()||undefined; if(tel!==p.tel){ p.tel=tel; p.telIsMobile=undefined; }
-    p.email=dlg.querySelector("#pemail").value.trim()||undefined; p.snap=dlg.querySelector("#psnap").value.trim()||undefined; p.insta=dlg.querySelector("#pinsta").value.trim()||undefined;
     saveDB(); dlg.close(); dlg.remove(); personSheet(pid);
   });
+  dlg.querySelector("#dlgCloseTop").addEventListener("click",()=>{ dlg.close(); dlg.remove(); });
   dlg.querySelector("#paddrSave").addEventListener("click",async ()=>{
-    const v=dlg.querySelector("#paddr").value.trim();
+    const v=dlg.querySelector("#paddr").value.split(/\n|,\s*/).map(x=>x.trim()).filter(Boolean).join("\n");
     const st=dlg.querySelector("#paddrStatus");
     if(v===(p.addr||"")){ st.textContent="No change."; return; }
     p.addr=v||undefined; p.loc=undefined; saveDB();
@@ -1659,7 +1668,9 @@ function renderNetwork(){
 
   // place clusters & venues
   const clusters={};
-  const townOf=a=>a.replace(/\b[A-Z]{1,2}\d[A-Z\d]?(\s*\d[A-Z]{2})?\b/gi,"").replace(/[0-9].*$/,"").replace(/[,\s]+$/,"").trim()||a;
+  const townOf=a=>{ const lines=String(a).split(/\n|,\s*/).map(x=>x.trim()).filter(Boolean);
+    const t=lines.find((l,i)=>i>0 && !/\d/.test(l)) || lines.find(l=>!/\d/.test(l)) || lines[0] || a;
+    return t.replace(/\b[A-Z]{1,2}\d[A-Z\d]?(\s*\d[A-Z]{2})?\b/gi,"").trim()||t; };
   for(const p of DB.people){ if(!p.addr||p.tier==="notnow") continue;
     const label=townOf(p.addr);
     (clusters[label.toLowerCase()]=clusters[label.toLowerCase()]||{label,ppl:[]}).ppl.push(p); }
@@ -1683,14 +1694,14 @@ function renderPlaceResults(list,withDist){
     const l=lastContact(r.p,Date.now());
     return `<div class="person" data-pid="${r.p.id}">${av(r.p.name)}
       <div><div class="nm">${esc(r.p.name)}</div>
-      <div class="meta">${r.p.addr?`📍 ${esc(r.p.addr)} · `:""}last: ${fmtAgo(l)}${withDist&&r.km!=null?` · ${r.km<1?"<1":Math.round(r.km)} km away`:""}</div></div></div>`;
+      <div class="meta">${r.p.addr?`📍 ${esc(addrLine(r.p.addr))} · `:""}last: ${fmtAgo(l)}${withDist&&r.km!=null?` · ${r.km<1?"<1":Math.round(r.km)} km away`:""}</div></div></div>`;
   }).join(""):`<div class="empty" style="padding:10px">No one found there.</div>`;
   el.querySelectorAll(".person").forEach(row=>row.addEventListener("click",()=>personSheet(row.dataset.pid)));
 }
 document.getElementById("placeQ").addEventListener("input",e=>{
   const q=e.target.value.trim().toLowerCase();
   if(!q){ document.getElementById("placeResults").innerHTML=""; return; }
-  const list=DB.people.filter(p=>p.tier!=="notnow"&&p.addr&&p.addr.toLowerCase().includes(q))
+  const list=DB.people.filter(p=>p.tier!=="notnow"&&p.addr&&addrLine(p.addr).toLowerCase().includes(q))
     .map(p=>({p})).sort((a,b)=>(lastContact(a.p,Date.now())||0)-(lastContact(b.p,Date.now())||0));
   renderPlaceResults(list,false);
 });
@@ -1726,7 +1737,7 @@ function renderMap(){
     const h=healthOfP(p,now);
     const m=L.circleMarker([p.loc.lat,p.loc.lon],
       {radius:9,color:"#ffffff",weight:2,fillColor:colorMap[h.k],fillOpacity:0.95}).addTo(kmap);
-    m.bindPopup(`<b>${esc(p.name)}</b><br>${h.label} · last ${fmtAgo(lastContact(p,now))}${p.addr?`<br>📍 ${esc(p.addr)}`:""}`);
+    m.bindPopup(`<b>${esc(p.name)}</b><br>${h.label} · last ${fmtAgo(lastContact(p,now))}${p.addr?`<br>📍 ${addrHtml(p.addr)}`:""}`);
     kmarkers.push(m);
   }
   kmap.fitBounds(L.latLngBounds(pts.map(p=>[p.loc.lat,p.loc.lon])).pad(0.3),{maxZoom:13});

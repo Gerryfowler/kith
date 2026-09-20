@@ -32,6 +32,8 @@
     <string>Samvar looks at recent calendar events for names of your people, so it can offer to log a lunch or a call. Nothing is uploaded.</string>
     <key>NSCalendarsFullAccessUsageDescription</key>
     <string>Samvar looks at recent calendar events for names of your people, so it can offer to log a lunch or a call. Nothing is uploaded.</string>
+    <key>NSPhotoLibraryAddUsageDescription</key>
+    <string>Lets Samvar keep a photo you take for a person or a conversation. Photos stay on this phone.</string>
     <key>NSCameraUsageDescription</key>
     <string>Take a photo for a person or a logged conversation. Photos stay on this phone.</string>
     <key>NSLocationWhenInUseUsageDescription</key>

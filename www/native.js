@@ -59,7 +59,8 @@
         const tel=main && main.number;
         const tels=phones.length>1?phones.filter(ph=>ph!==main).map(ph=>({label:ph.label,number:ph.number})):undefined;
         const a=c.postalAddresses && c.postalAddresses[0];
-        const addr=a ? [a.street,a.city,a.region,a.postcode,a.country].filter(Boolean).join(", ") : undefined;
+        // Letter layout: one part per line (street may itself span lines).
+        const addr=a ? [a.street,a.city,a.region,a.postcode,a.country].map(x=>String(x||"").trim()).filter(Boolean).join("\n") : undefined;
         const email=c.emails && c.emails[0] && c.emails[0].address;
         const b=c.birthday;
         const birthday=(b && b.day && b.month) ? `${b.day} ${MONTHS[b.month-1]}` : undefined;
@@ -100,7 +101,8 @@
     async pickPhoto(source){
       if(!Camera) return null;
       try{ const r=await Camera.getPhoto({resultType:"base64", source:source==="camera"?"CAMERA":"PHOTOS", quality:70, width:640, height:640, correctOrientation:true});
-        return r && r.base64String ? r.base64String : null; }catch(e){ return null; }
+        return r && r.base64String ? r.base64String : null; }
+      catch(e){ const m=String(e&&e.message||e); if(!/cancel/i.test(m)) alert("Couldn't get a photo: "+m); return null; }
     },
     async purchase(plan){
       await rc();
