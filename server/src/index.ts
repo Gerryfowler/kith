@@ -1,7 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
-import { OPENER_SYSTEM, PARSE_SYSTEM } from "./prompts";
+import { ADDRESS_SYSTEM, OPENER_SYSTEM, PARSE_SYSTEM } from "./prompts";
 
 export interface Env {
   ANTHROPIC_API_KEY: string;
@@ -40,6 +40,8 @@ const Interaction = z.object({
 });
 const ParseOut = z.object({ interactions: z.array(Interaction) });
 const OpenersOut = z.object({ openers: z.array(z.string()) });
+const AddressBody = z.object({ address: z.string().min(1).max(300), hints: z.array(z.string().max(300)).max(8).default([]), locale: z.string().max(20).optional() });
+const AddressOut = z.object({ address: z.string(), confidence: z.enum(["high", "medium", "low"]) });
 
 const ParseBody = z.object({ note: z.string().min(1).max(4000), people: z.string().max(6000), today: z.string().max(80) });
 const OpenersBody = z.object({
@@ -107,7 +109,7 @@ export default {
     const meta = { "x-samvar-plan": plan };
 
     if (req.method === "GET" && url.pathname === "/v1/me") return json({ plan }, 200, meta);
-    if (req.method !== "POST" || !["/v1/parse", "/v1/openers"].includes(url.pathname)) return json({ error: "not found" }, 404);
+    if (req.method !== "POST" || !["/v1/parse", "/v1/openers", "/v1/address"].includes(url.pathname)) return json({ error: "not found" }, 404);
 
     if (plan !== "pro") return json({ error: "subscription required" }, 402, meta);
     if (Number(req.headers.get("content-length") ?? 0) > MAX_BODY) return json({ error: "too large" }, 413, meta);
@@ -132,6 +134,18 @@ export default {
         });
         if (res.stop_reason === "refusal") return json({ error: "refused" }, 422, meta);
         out = res.parsed_output?.interactions ?? [];
+      } else if (url.pathname === "/v1/address") {
+        const b = AddressBody.safeParse(body);
+        if (!b.success) return json({ error: "bad request" }, 400, meta);
+        const res = await client.messages.parse({
+          model: env.MODEL,
+          max_tokens: 300,
+          system: ADDRESS_SYSTEM,
+          messages: [{ role: "user", content: `Address: ${b.data.address}\nOther addresses in this person's contacts (for country/region context): ${b.data.hints.join(" | ") || "(none)"}\nPhone locale: ${b.data.locale || "unknown"}` }],
+          output_config: { format: zodOutputFormat(AddressOut), effort: "low" },
+        });
+        if (res.stop_reason === "refusal") return json({ error: "refused" }, 422, meta);
+        out = res.parsed_output ?? { address: b.data.address, confidence: "low" };
       } else {
         const b = OpenersBody.safeParse(body);
         if (!b.success) return json({ error: "bad request" }, 400, meta);

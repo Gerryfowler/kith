@@ -25,7 +25,11 @@
     <key>LSRequiresIPhoneOS</key>
     <true/>
     <key>NSContactsUsageDescription</key>
-    <string>Samvar lets you pick contacts to add to your circles. Only the people you choose are saved, and only on this phone.</string>
+    <string>Samvar shows your contacts so you can flag the people you want in your circles. Only the people you flag are saved, and only on this phone.</string>
+    <key>NSPhotoLibraryUsageDescription</key>
+    <string>Add a photo to a person or a logged conversation. Photos stay on this phone.</string>
+    <key>NSCameraUsageDescription</key>
+    <string>Take a photo for a person or a logged conversation. Photos stay on this phone.</string>
     <key>NSLocationWhenInUseUsageDescription</key>
     <string>Used for “Near me” and to note where you saw someone. Your location is never uploaded.</string>
     <key>UILaunchStoryboardName</key>

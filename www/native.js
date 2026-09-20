@@ -7,7 +7,7 @@
   // Capacitor.Plugins and has no registerPlugin. Fall back to registerPlugin only if a runtime provides it.
   const reg=n=>{ try{ if(Cap.Plugins&&Cap.Plugins[n]) return Cap.Plugins[n]; return Cap.registerPlugin?Cap.registerPlugin(n):null; }catch(e){ return null; } };
   const LocalNotifications=reg("LocalNotifications"), Contacts=reg("Contacts"), Purchases=reg("Purchases"),
-        Haptics=reg("Haptics"), Share=reg("Share"), App=reg("App"), StatusBar=reg("StatusBar"), Filesystem=reg("Filesystem");
+        Haptics=reg("Haptics"), Share=reg("Share"), App=reg("App"), StatusBar=reg("StatusBar"), Filesystem=reg("Filesystem"), Camera=reg("Camera");
 
   const RC_IOS_KEY="appl_HRQlVTfaAsgwxnwRfnwRfEFtsaJ";
   let rcReady=false;
@@ -39,18 +39,52 @@
           id:1000+i, title:t.title, body:t.body, schedule:{at:new Date(at)}, sound:"default"}))});
       }catch(e){ console.warn("scheduleNudges",e); }
     },
-    async pickContact(){
+    // Whole address book (name, phone, address, email, birthday) for the in-app "flag into a circle" list.
+    // Photos are fetched per person on demand (contactPhoto) so the list loads fast.
+    async allContacts(){
       if(!Contacts) return null;
-      const r=await Contacts.pickContact({projection:{name:true,phones:true,postalAddresses:true,emails:true,birthday:true}});
-      const c=r && r.contact; if(!c) return null;
-      const name=c.name && (c.name.display || [c.name.given,c.name.family].filter(Boolean).join(" "));
-      const tel=c.phones && c.phones[0] && c.phones[0].number;
-      const a=c.postalAddresses && c.postalAddresses[0];
-      const addr=a ? [a.street,a.city,a.postcode].filter(Boolean).join(" ") : undefined;
-      const email=c.emails && c.emails[0] && c.emails[0].address;
-      const b=c.birthday, MONTHS=["January","February","March","April","May","June","July","August","September","October","November","December"];
-      const birthday=(b && b.day && b.month) ? `${b.day} ${MONTHS[b.month-1]}` : undefined;
-      return name ? {name, tel:tel||undefined, addr:addr||undefined, email:email||undefined, birthday} : null;
+      let perm=await Contacts.checkPermissions();
+      if(perm.contacts!=="granted") perm=await Contacts.requestPermissions();
+      if(perm.contacts!=="granted") return null;
+      const r=await Contacts.getContacts({projection:{name:true,phones:true,postalAddresses:true,emails:true,birthday:true}});
+      const MONTHS=["January","February","March","April","May","June","July","August","September","October","November","December"];
+      return (r.contacts||[]).map(c=>{
+        const name=c.name && (c.name.display || [c.name.given,c.name.family].filter(Boolean).join(" "));
+        if(!name) return null;
+        const tel=c.phones && c.phones[0] && c.phones[0].number;
+        const a=c.postalAddresses && c.postalAddresses[0];
+        const addr=a ? [a.street,a.city,a.region,a.postcode,a.country].filter(Boolean).join(", ") : undefined;
+        const email=c.emails && c.emails[0] && c.emails[0].address;
+        const b=c.birthday;
+        const birthday=(b && b.day && b.month) ? `${b.day} ${MONTHS[b.month-1]}` : undefined;
+        return {contactId:c.contactId, name, tel:tel||undefined, addr, email:email||undefined, birthday};
+      }).filter(Boolean).sort((x,y)=>x.name.localeCompare(y.name));
+    },
+    async contactPhoto(contactId){
+      if(!Contacts) return null;
+      try{ const r=await Contacts.getContact({contactId, projection:{image:true}});
+        const b64=r && r.contact && r.contact.image && r.contact.image.base64String; return b64||null; }catch(e){ return null; }
+    },
+    // Photos live as JPEG files in the app's data directory; the DB only stores the relative path.
+    async savePhoto(base64, key){
+      if(!Filesystem) return null;
+      const path=`photos/${key}.jpg`;
+      await Filesystem.writeFile({path, data:base64.replace(/^data:[^,]*,/,""), directory:"DATA", recursive:true});
+      return path;
+    },
+    async deletePhoto(path){ if(Filesystem&&path) try{ await Filesystem.deleteFile({path, directory:"DATA"}); }catch(e){} },
+    _photoUrls:{},
+    async photoUrl(path){
+      if(!Filesystem||!path) return null;
+      if(this._photoUrls[path]) return this._photoUrls[path];
+      const r=await Filesystem.getUri({path, directory:"DATA"});
+      const url=Cap.convertFileSrc(r.uri); this._photoUrls[path]=url; return url;
+    },
+    // source: "photos" | "camera". Returns base64 JPEG downscaled to 640px, or null if cancelled.
+    async pickPhoto(source){
+      if(!Camera) return null;
+      try{ const r=await Camera.getPhoto({resultType:"base64", source:source==="camera"?"CAMERA":"PHOTOS", quality:70, width:640, height:640, correctOrientation:true});
+        return r && r.base64String ? r.base64String : null; }catch(e){ return null; }
     },
     async purchase(plan){
       await rc();

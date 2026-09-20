@@ -252,7 +252,7 @@ Each object:
  "place":"place mentioned in the note (restaurant, area, town) or empty string",
  "summary":"<12 words capturing the interaction",
  "facts":[{"person":"Name","fact":"short durable fact worth remembering before next contacting them","kind":"family"|"likes"|"plans"|"work"|"date"|"other"}]}
-Facts are the CRM layer and the most valuable output — be GENEROUS. If the note contains ANY personal detail about someone (family members and their names, partner, pets, likes and dislikes, plans, trips, upcoming events, job or house moves, things they're worried about or celebrating, things to ask about next time), you MUST capture it: aim for 1–3 facts per interaction. Write each fact so it stands alone ("daughter Iris starting secondary school in September"). Use the known person's name in "person" even when the note says "she"/"his wife" — attribute to whoever the interaction is with. Only return an empty array when the note is purely logistical with zero personal content.
+Facts are long-term memory, so be SELECTIVE: only durable things worth knowing months from now — birthdays and anniversaries, partner and children's names, pets' names, a job change, a house move, a health matter, a major life event. Do NOT record passing details, preferences, opinions, plans for next week or what was discussed (the "summary" field already captures the topic). Most interactions yield 0 facts; rarely more than 1. Write each fact so it stands alone ("daughter Iris, started secondary school Sept 2026"). Use the known person's name in "person" even when the note says "she"/"his wife" — attribute to whoever the interaction is with.
 ALWAYS capture birthdays, anniversaries and other recurring personal dates as kind "date", converting relative mentions into the actual calendar date using today's date: "it was her birthday yesterday" on 19 August → {"fact":"birthday 18 August","kind":"date"}. A birthday is never trivia.
 The note is usually dictated speech-to-text, so names are often mis-transcribed. If a name is phonetically or visually close to someone on the known-people list ("Sara"/"Serra"→Sarah, "Tomm"→Tom, "Jaymes"→James), treat it as that known person and return the known spelling in "people". Only put a name in "new_people" if it clearly is not a known person.
 Judge depth by substance, not length. Group chat/likes count as "message". If genuinely no interaction is described, return [].`;
@@ -268,8 +268,17 @@ function shortPlace(dn){ return String(dn||"").split(",").map(s=>s.trim()).slice
 async function geocode(addr){
   const key=addr.trim().toLowerCase(); if(!key) return null;
   if(key in DB.geo && DB.geo[key]!==null) return DB.geo[key]; // cache hits only; failures are retried
-  const j=await nominatim("https://nominatim.openstreetmap.org/search?format=json&limit=1&q="+encodeURIComponent(addr));
-  const hit=(j&&j[0])?{lat:+j[0].lat,lon:+j[0].lon,label:shortPlace(j[0].display_name)}:null;
+  const look=async q=>{ const j=await nominatim("https://nominatim.openstreetmap.org/search?format=json&limit=1&q="+encodeURIComponent(q));
+    return (j&&j[0])?{lat:+j[0].lat,lon:+j[0].lon,label:shortPlace(j[0].display_name)}:null; };
+  let hit=await look(addr);
+  // Not found: let Samvar AI tidy the address (expand abbreviations, infer a missing country) and try once more.
+  if(!hit && entitled() && !getApiKey()){
+    try{
+      const hints=DB.people.map(p=>p.addr).filter(a=>a&&a.trim().toLowerCase()!==key).slice(0,6);
+      const r=await samvarAI("/v1/address",{address:addr, hints, locale:navigator.language||""});
+      if(r&&r.address&&r.confidence!=="low"&&r.address.trim().toLowerCase()!==key){ hit=await look(r.address); if(hit) hit.fixed=r.address; }
+    }catch(e){ /* offline or no plan: plain lookup result stands */ }
+  }
   DB.geo[key]=hit; saveDB(); return hit;
 }
 async function reverseGeo(lat,lon){
@@ -471,11 +480,20 @@ function editInteraction(id){
       <input type="text" id="ewhere" value="${esc(x.place||"")}" placeholder="place (optional)">
       <button class="btn ghost small" id="egps">📍</button></div></div>
     <div class="fld"><label>When</label><input type="date" id="edate" value="${localDate(x.ts)}"></div>
+    <div class="fld"><label>Photo</label><div style="display:flex;gap:8px;align-items:center">
+      <div id="ephoto" class="avatar" ${x.photo?`data-photo="${esc(x.photo)}"`:""} style="border-radius:10px;width:56px;height:56px;${x.photo?"":"display:none"}"></div>
+      <button class="btn ghost small" id="ephotoBtn">${x.photo?"Change photo":"📷 Add photo"}</button>
+      <button class="btn ghost small" id="ephotoRm" style="${x.photo?"":"display:none"}">Remove</button></div></div>
     <div style="display:flex;gap:8px">
       <button class="btn small" id="esave">Save changes</button>
       <button class="btn ghost small" id="ecancel">Cancel</button></div>`;
   document.body.appendChild(dlg); dlg.showModal();
-  const draft={personIds:[...x.personIds],initiator:x.initiator,depth:x.depth,channel:x.channel,ts:x.ts,place:x.place||"",loc:x.loc};
+  const draft={personIds:[...x.personIds],initiator:x.initiator,depth:x.depth,channel:x.channel,ts:x.ts,place:x.place||"",loc:x.loc,photo:x.photo};
+  hydratePhotos(dlg);
+  dlg.querySelector("#ephotoBtn").addEventListener("click",async ()=>{ const ref=await choosePhoto(); if(!ref) return;
+    if(draft.photo&&draft.photo!==x.photo) removePhoto(draft.photo);
+    draft.photo=ref; const ph=dlg.querySelector("#ephoto"); ph.dataset.photo=ref; ph.style.display=""; hydratePhotos(dlg); dlg.querySelector("#ephotoRm").style.display=""; });
+  dlg.querySelector("#ephotoRm").addEventListener("click",()=>{ if(draft.photo&&draft.photo!==x.photo) removePhoto(draft.photo); draft.photo=undefined; dlg.querySelector("#ephoto").style.display="none"; dlg.querySelector("#ephotoRm").style.display="none"; dlg.querySelector("#ephotoBtn").textContent="📷 Add photo"; });
   dlg.querySelector("#ewhere").addEventListener("input",e=>{ draft.place=e.target.value; });
   dlg.querySelector("#egps").addEventListener("click",async ()=>{
     const b=dlg.querySelector("#egps"); b.textContent="…";
@@ -506,9 +524,10 @@ function editInteraction(id){
   dlg.querySelector("#edate").addEventListener("change",e=>{ draft.ts=new Date(e.target.value+"T12:00").getTime(); });
   dlg.querySelector("#esave").addEventListener("click",()=>{
     if(!draft.personIds.length){ alert("Keep at least one person on it."); return; }
+    if(x.photo&&x.photo!==draft.photo) removePhoto(x.photo);
     Object.assign(x,draft); saveDB(); dlg.close(); dlg.remove(); renderAll();
   });
-  dlg.querySelector("#ecancel").addEventListener("click",()=>{ dlg.close(); dlg.remove(); });
+  dlg.querySelector("#ecancel").addEventListener("click",()=>{ if(draft.photo&&draft.photo!==x.photo) removePhoto(draft.photo); dlg.close(); dlg.remove(); });
 }
 
 /* ---------- weekly goal & streak ---------- */
@@ -586,7 +605,57 @@ function contactBtns(p, small){
 function initials(name){ return name.split(/\s+/).slice(0,2).map(w=>w[0]||"").join("").toUpperCase(); }
 const AV_COLORS=["#cfe0f7","#f9ddc9","#d5eedd","#f3d9e5","#e6e0f7","#f7ecc8"];
 function avColor(name){ let h=0; for(const c of String(name)) h=(h*31+c.charCodeAt(0))>>>0; return AV_COLORS[h%AV_COLORS.length]; }
-function av(name){ return `<div class="avatar" style="background:${avColor(name)}">${esc(initials(name))}</div>`; }
+function av(name, photo){ return `<div class="avatar"${photo?` data-photo="${esc(photo)}"`:""} style="background:${avColor(name)}">${esc(initials(name))}</div>`; }
+/* ---------- photos: files on the phone (native) or small data URLs (web) ---------- */
+const photoCache={};
+function photoSrcSync(ref){ return !ref?null:ref.startsWith("data:")?ref:(photoCache[ref]||null); }
+async function photoSrc(ref){
+  if(!ref) return null; if(ref.startsWith("data:")) return ref;
+  if(photoCache[ref]) return photoCache[ref];
+  const n=window.SamvarNative; if(!n||!n.photoUrl) return null;
+  try{ const u=await n.photoUrl(ref); if(u) photoCache[ref]=u; return u; }catch(e){ return null; }
+}
+function hydratePhotos(root){
+  (root||document).querySelectorAll("[data-photo]").forEach(async el=>{
+    const src=await photoSrc(el.dataset.photo); if(!src||!el.isConnected) return;
+    el.style.backgroundImage=`url("${src}")`; el.style.backgroundSize="cover"; el.style.backgroundPosition="center"; el.textContent="";
+  });
+}
+// Downscale an image (data URL) on a canvas; used on the web and for contact photos.
+function shrinkImage(dataUrl, max){
+  return new Promise(res=>{ const img=new Image(); img.onload=()=>{
+    const k=Math.min(1, max/Math.max(img.width,img.height)); const c=document.createElement("canvas");
+    c.width=Math.round(img.width*k); c.height=Math.round(img.height*k);
+    c.getContext("2d").drawImage(img,0,0,c.width,c.height); res(c.toDataURL("image/jpeg",0.72)); };
+    img.onerror=()=>res(null); img.src=dataUrl; });
+}
+// Store a base64 JPEG and return the reference to keep in the DB.
+async function storePhoto(base64){
+  const n=window.SamvarNative;
+  if(n&&n.savePhoto){ const ref=await n.savePhoto(base64, uid()+uid()); if(ref) photoCache[ref]=null; return ref; }
+  return shrinkImage("data:image/jpeg;base64,"+base64.replace(/^data:[^,]*,/,""), 256);
+}
+async function removePhoto(ref){ if(!ref||ref.startsWith("data:")) return; window.SamvarNative?.deletePhoto?.(ref); delete photoCache[ref]; }
+// Ask for a photo: native gets a Camera / Library choice, the web gets a file picker. Resolves to a DB reference or null.
+function choosePhoto(){
+  const n=window.SamvarNative;
+  if(n&&n.pickPhoto){
+    return new Promise(res=>{
+      const dlg=document.createElement("dialog");
+      dlg.innerHTML=`<h2 style="font-size:17px;margin-bottom:10px">Add a photo</h2>
+        <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn small" data-src="camera">📷 Take photo</button>
+        <button class="btn secondary small" data-src="photos">🖼 Choose from library</button><button class="btn ghost small" data-src="">Cancel</button></div>`;
+      document.body.appendChild(dlg); dlg.showModal();
+      dlg.querySelectorAll("[data-src]").forEach(b=>b.addEventListener("click",async ()=>{
+        dlg.close(); dlg.remove(); if(!b.dataset.src) return res(null);
+        const b64=await n.pickPhoto(b.dataset.src); res(b64?await storePhoto(b64):null); }));
+    });
+  }
+  return new Promise(res=>{ const inp=document.createElement("input"); inp.type="file"; inp.accept="image/*";
+    inp.onchange=async ()=>{ const f=inp.files[0]; if(!f) return res(null);
+      const r=new FileReader(); r.onload=async ()=>res(await shrinkImage(r.result,256)); r.readAsDataURL(f); };
+    inp.click(); });
+}
 const KIND_EMOJI={family:"👨‍👩‍👧",likes:"❤️",plans:"📅",work:"💼",date:"🎂",other:"📝"};
 function fmtAgo(ts){
   if(!ts) return "never";
@@ -617,15 +686,6 @@ let showAllSugg=false;
 function renderHome(){
   const now=Date.now();
   renderOnboard();
-  // weekly goal & streak
-  const G=weekGoal(), g=streakData();
-  const dots=Array.from({length:G},(_,i)=>`<i class="${i<g.cur?"on":""}">${i<g.cur?"✓":""}</i>`).join("");
-  document.getElementById("goalCard").innerHTML=`
-    <div class="lbl" style="font-size:12px;color:var(--ink-2);font-weight:600;text-transform:uppercase;letter-spacing:.05em">This week — meaningful conversations</div>
-    <div class="goal-dots">${dots}</div>
-    <div class="streak">${g.done
-      ? `✓ Week closed! Streak: <b>${g.streak} week${g.streak===1?"":"s"}</b> 🔥`
-      : `${g.cur} of ${G} — ${G-g.cur} more substantive conversation${G-g.cur===1?"":"s"} to keep the streak${g.streak?` (currently ${g.streak} 🔥)`:""}`}</div>`;
   // birthday radar
   const bd=upcomingBirthdays(14);
   document.getElementById("bdayStrip").innerHTML=bd.length?`<div class="card" style="background:var(--tint-rose);border-color:transparent">
@@ -658,14 +718,15 @@ function renderHome(){
   const xs=[...DB.interactions].sort((a,b)=>b.ts-a.ts).slice(0,6);
   rec.innerHTML=xs.length?xs.map(x=>{
     const names=x.personIds.map(id=>DB.people.find(p=>p.id===id)?.name||"(removed)").join(", ");
-    return `<div class="person">${av(names)}
+    return `<div class="person" data-edit="${x.id}" style="cursor:pointer">${x.photo?`<div class="avatar" data-photo="${esc(x.photo)}" style="border-radius:10px"></div>`:av(names)}
       <div><div class="nm">${esc(names||"(no one tagged)")}</div>
       <div class="meta">${DEPTHS[x.depth-1].label} · ${CHANNELS[x.channel].label} · ${INITS[x.initiator].label} · ${fmtAgo(x.ts)}${x.place?` · 📍 ${esc(x.place)}`:""}</div></div>
-      <div class="spacer"></div><span class="badge">+${Math.round(interactionPoints(x))} smiles</span><button class="xdel" data-edit="${x.id}">✎</button><button class="xdel" data-x="${x.id}">✕</button></div>`;
+      <div class="spacer"></div><span class="badge">+${Math.round(interactionPoints(x))} smiles</span><button class="xdel" data-x="${x.id}">✕</button></div>`;
   }).join(""):`<div class="empty">Your logged interactions appear here.</div>`;
-  rec.querySelectorAll("[data-edit]").forEach(b=>b.addEventListener("click",()=>editInteraction(b.dataset.edit)));
-  rec.querySelectorAll("[data-x]").forEach(b=>b.addEventListener("click",()=>{
+  rec.querySelectorAll("[data-edit]").forEach(row=>row.addEventListener("click",()=>editInteraction(row.dataset.edit)));
+  rec.querySelectorAll("[data-x]").forEach(b=>b.addEventListener("click",ev=>{ ev.stopPropagation();
     if(confirm("Delete this interaction? Scores recalculate immediately.")){
+      const x=DB.interactions.find(i=>i.id===b.dataset.x); removePhoto(x?.photo);
       DB.interactions=DB.interactions.filter(i=>i.id!==b.dataset.x); saveDB(); renderAll();
     }
   }));
@@ -853,7 +914,7 @@ function renderReflection(){
   el.innerHTML=`<div class="card t-mint">
     <div class="lbl" style="font-size:12px;color:var(--ink-2);font-weight:600;text-transform:uppercase;letter-spacing:.05em">${dow===0?"This week":"Last week"} in review</div>
     <div style="font-size:15px;margin-top:6px;line-height:1.5"><b>${xs.length}</b> conversation${xs.length===1?"":"s"} with <b>${people}</b> ${people===1?"person":"people"} · <b>${meaningful}</b> meaningful · you started <b>${mine}</b>${top?` · most time with <b>${esc(capName(top))}</b>`:""}</div>
-    <div class="why" style="margin-top:6px">${meaningful>=weekGoal()?"Goal hit 🔥 ":""}${mine/xs.length<0.4?"Try initiating a couple more next week.":"Good balance of initiating."}</div>
+    <div class="why" style="margin-top:6px">${mine/xs.length<0.4?"Try initiating a couple more next week.":"Good balance of initiating."}</div>
     <button class="btn ghost small" id="reflectOk" style="margin-top:10px">Got it</button></div>`;
   el.querySelector("#reflectOk").addEventListener("click",()=>{ dismiss(key,8); renderAll(); });
 }
@@ -870,8 +931,7 @@ function nudgeText(){
     else if(n.kind==="deepen") parts.push(`Go deeper with ${capName(n.p)} this time`);
     else if(n.kind==="introduce") parts.push(`Get ${capName(n.p)} and ${capName(n.q)} together`);
   }
-  const g=streakData(), G=weekGoal();
-  if(!parts.length) parts.push(g.done?`Week's goal done — streak ${g.streak} 🔥`:`${G-g.cur} meaningful conversation${G-g.cur===1?"":"s"} to go this week`);
+  if(!parts.length) parts.push("Everyone's in rhythm — a good day to surprise someone with a message.");
   return {title:"Samvar", body:parts.slice(0,3).join(" · ")};
 }
 function nextNudgeTimes(count){
@@ -901,8 +961,6 @@ function renderSettingsUI(){
   if(aiEl){ aiEl.textContent=!ai?"Samvar AI: not contacted yet.":ai.plan==="pro"?`Samvar AI: connected as Pro (checked ${fmtAgo(ai.checked)}).`:`Samvar AI: server could not verify your subscription (checked ${fmtAgo(ai.checked)}). Tap to re-check.`;
     aiEl.onclick=async ()=>{ aiEl.textContent="Samvar AI: checking…"; try{ const r=await fetch(API_BASE+"/v1/me",{headers:{"authorization":"Bearer "+deviceId()}}); const j=await r.json(); DB.settings.aiPlan={plan:j.plan,checked:Date.now()}; saveDB(); }catch(e){ DB.settings.aiPlan={plan:"unreachable",checked:Date.now()}; saveDB(); } renderSettingsUI(); }; }
   document.getElementById("devCard").style.display=devMode()?"block":"none";
-  const G=weekGoal();
-  document.querySelectorAll("#goalSeg button").forEach(b=>b.classList.toggle("on",+b.dataset.g===G));
   document.querySelectorAll("#nudgeSeg button").forEach(b=>b.classList.toggle("on",b.dataset.nf===(DB.settings.nudgeFreq||"daily")));
   document.getElementById("nudgeTime").value=DB.settings.nudgeTime||"09:00";
 }
@@ -940,7 +998,7 @@ function renderPeople(){
     html+=ppl.map(p=>{
       const h=healthOfP(p,Date.now()), last=lastContact(p,Date.now());
       return `<div class="person" data-pid="${p.id}">
-        ${av(p.name)}
+        ${av(p.name,p.photo)}
         <div><div class="nm">${esc(p.name)}</div><div class="meta">last: ${fmtAgo(last)}</div></div>
         <div class="spacer"></div>
         ${k!=="notnow"?`<span class="status" style="color:${h.color}"><i style="background:${h.color}"></i>${h.label}</span>`:""}
@@ -955,7 +1013,10 @@ function personSheet(pid){
   const p=DB.people.find(x=>x.id===pid); if(!p) return;
   const xs=DB.interactions.filter(x=>x.personIds.includes(pid)).sort((a,b)=>b.ts-a.ts);
   const dlg=document.createElement("dialog");
-  dlg.innerHTML=`<h2 style="font-size:18px;margin-bottom:4px">${esc(p.name)}</h2>
+  dlg.innerHTML=`<div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
+      <div style="transform:scale(1.5);transform-origin:left center">${av(p.name,p.photo)}</div>
+      <div style="margin-left:14px"><h2 style="font-size:18px;margin:0">${esc(p.name)}</h2>
+        <div style="display:flex;gap:6px;margin-top:6px"><button class="btn ghost small" id="pphoto">${p.photo?"Change photo":"Add photo"}</button>${p.photo?`<button class="btn ghost small" id="pphotoRm">Remove</button>`:""}</div></div></div>
     <div class="fld"><label>Circle</label><div class="seg">${Object.entries(TIERS).map(([k,t])=>`<button data-tier="${k}" class="${p.tier===k?"on":""}">${t.label}</button>`).join("")}</div></div>
     <div class="fld"><label>Phone</label><div style="display:flex;gap:8px;align-items:center">
       <input type="tel" id="ptel" value="${esc(p.tel||"")}" placeholder="+44 7…">
@@ -973,14 +1034,16 @@ function personSheet(pid){
       <input type="text" id="factAdd" placeholder="Add something to remember…">
       <button class="btn small" id="factAddBtn">Add</button></div>
     <div class="sect" style="margin-top:12px">History</div>
-    ${xs.length?xs.slice(0,20).map(x=>`<div class="person"><div><div class="nm" style="font-size:14px">${DEPTHS[x.depth-1].label} · ${CHANNELS[x.channel].label}</div>
+    ${xs.length?xs.slice(0,20).map(x=>`<div class="person" data-xedit="${x.id}" style="cursor:pointer">${x.photo?`<div class="avatar" data-photo="${esc(x.photo)}" style="border-radius:10px"></div>`:""}<div><div class="nm" style="font-size:14px">${DEPTHS[x.depth-1].label} · ${CHANNELS[x.channel].label}</div>
       <div class="meta">${INITS[x.initiator].label} · ${fmtAgo(x.ts)}${x.place?` · 📍 ${esc(x.place)}`:""}${x.note?` — ${esc(x.note.slice(0,90))}`:""}</div></div>
-      <div class="spacer"></div><button class="xdel" data-xedit="${x.id}">✎</button><button class="xdel" data-xdel="${x.id}">✕</button></div>`).join("")
+      <div class="spacer"></div><button class="xdel" data-xdel="${x.id}">✕</button></div>`).join("")
       :`<div class="empty">No interactions logged yet.</div>`}
     <div style="display:flex;gap:8px;margin-top:12px">
       <button class="btn small" id="dlgClose">Done</button>
       <button class="btn danger small" id="dlgDel">Remove person</button></div>`;
-  document.body.appendChild(dlg); dlg.showModal();
+  document.body.appendChild(dlg); dlg.showModal(); hydratePhotos(dlg);
+  dlg.querySelector("#pphoto").addEventListener("click",async ()=>{ const ref=await choosePhoto(); if(!ref) return; await removePhoto(p.photo); p.photo=ref; saveDB(); dlg.close(); dlg.remove(); renderAll(); personSheet(pid); });
+  dlg.querySelector("#pphotoRm")?.addEventListener("click",async ()=>{ await removePhoto(p.photo); p.photo=undefined; saveDB(); dlg.close(); dlg.remove(); renderAll(); personSheet(pid); });
   dlg.querySelectorAll("[data-tier]").forEach(b=>b.addEventListener("click",()=>{ p.tier=b.dataset.tier; saveDB(); dlg.close(); dlg.remove(); renderAll(); }));
   dlg.querySelectorAll("[data-fdel]").forEach(b=>b.addEventListener("click",()=>{
     p.facts.splice(+b.dataset.fdel,1); saveDB(); dlg.close(); dlg.remove(); personSheet(pid);
@@ -1006,17 +1069,18 @@ function personSheet(pid){
     p.facts=p.facts||[]; p.facts.push({f:v,kind:"other",ts:Date.now()});
     saveDB(); dlg.close(); dlg.remove(); personSheet(pid);
   });
-  dlg.querySelectorAll("[data-xedit]").forEach(b=>b.addEventListener("click",()=>{
-    dlg.close(); dlg.remove(); editInteraction(b.dataset.xedit);
+  dlg.querySelectorAll("[data-xedit]").forEach(row=>row.addEventListener("click",()=>{
+    dlg.close(); dlg.remove(); editInteraction(row.dataset.xedit);
   }));
-  dlg.querySelectorAll("[data-xdel]").forEach(b=>b.addEventListener("click",()=>{
+  dlg.querySelectorAll("[data-xdel]").forEach(b=>b.addEventListener("click",ev=>{ ev.stopPropagation();
     if(confirm("Delete this interaction? Scores recalculate immediately.")){
+      const x=DB.interactions.find(i=>i.id===b.dataset.xdel); removePhoto(x?.photo);
       DB.interactions=DB.interactions.filter(i=>i.id!==b.dataset.xdel);
       saveDB(); renderAll(); dlg.close(); dlg.remove(); personSheet(pid);
     }
   }));
   dlg.querySelector("#dlgClose").addEventListener("click",()=>{ dlg.close(); dlg.remove(); });
-  dlg.querySelector("#dlgDel").addEventListener("click",()=>{ if(confirm(`Remove ${p.name}? Their logged interactions stay but untagged.`)){ DB.people=DB.people.filter(x=>x.id!==pid); saveDB(); dlg.close(); dlg.remove(); renderAll(); }});
+  dlg.querySelector("#dlgDel").addEventListener("click",()=>{ if(confirm(`Remove ${p.name}? Their logged interactions stay but untagged.`)){ removePhoto(p.photo); DB.people=DB.people.filter(x=>x.id!==pid); saveDB(); dlg.close(); dlg.remove(); renderAll(); }});
 }
 function askTier(name, cb){
   if(!entitled()){ paywallSheet("Start your free trial to add people."); return; }
@@ -1052,11 +1116,18 @@ function renderDrafts(){
         <input type="text" data-where="${di}" value="${esc(d.place||"")}" placeholder="place (optional)">
         <button class="btn ghost small" data-gps="${di}" title="Use my location">📍</button></div></div>
       <div class="fld"><label>When</label><input type="date" data-date="${di}" value="${localDate(d.ts)}"></div>
+      <div class="fld"><label>Photo</label><div style="display:flex;gap:8px;align-items:center">
+        ${d.photo?`<div class="avatar" data-photo="${esc(d.photo)}" style="border-radius:10px;width:56px;height:56px"></div>`:""}
+        <button class="btn ghost small" data-photo-add="${di}">${d.photo?"Change photo":"📷 Add photo"}</button>
+        ${d.photo?`<button class="btn ghost small" data-photo-rm="${di}">Remove</button>`:""}</div></div>
       <div style="display:flex;gap:8px">
         <button class="btn" data-save="${di}">Save · +${Math.round(interactionPoints(d))} smiles${d.personIds.length>1?" each":""}</button>
         <button class="btn ghost small" data-discard="${di}">Discard</button></div>
     </div>`;
   }).join("");
+  hydratePhotos(el);
+  el.querySelectorAll("[data-photo-add]").forEach(b=>b.addEventListener("click",async ()=>{ const d=drafts[+b.dataset.photoAdd]; const ref=await choosePhoto(); if(!ref) return; removePhoto(d.photo); d.photo=ref; renderDrafts(); }));
+  el.querySelectorAll("[data-photo-rm]").forEach(b=>b.addEventListener("click",()=>{ const d=drafts[+b.dataset.photoRm]; removePhoto(d.photo); d.photo=undefined; renderDrafts(); }));
   // bindings
   el.querySelectorAll(".seg[data-set]").forEach(seg=>{
     seg.querySelectorAll("button").forEach(b=>b.addEventListener("click",()=>{
@@ -1106,7 +1177,7 @@ function renderDrafts(){
     const d=drafts[+b.dataset.save];
     if((d.pendingNames||[]).length){ alert("Tap the highlighted name(s) to file them into a circle first."); return; }
     if(!d.personIds.length){ alert("Tag at least one person (type a name and press return)."); return; }
-    DB.interactions.push({id:uid(),ts:d.ts,personIds:d.personIds,initiator:d.initiator,depth:d.depth,channel:d.channel,note:d.note,place:d.place||"",loc:d.loc});
+    DB.interactions.push({id:uid(),ts:d.ts,personIds:d.personIds,initiator:d.initiator,depth:d.depth,channel:d.channel,note:d.note,place:d.place||"",loc:d.loc,photo:d.photo});
     // attach remembered facts to their people (fuzzy names; fall back to the tagged person)
     for(const f of (d.facts||[])){
       let p=DB.people.find(x=>x.name.toLowerCase()===f.person.toLowerCase()
@@ -1124,7 +1195,7 @@ function renderDrafts(){
     window.SamvarNative?.haptic("success"); window.SamvarNative?.scheduleNudges();
     if(!drafts.length){ document.getElementById("logText").value=""; switchPage("home"); }
   }));
-  el.querySelectorAll("[data-discard]").forEach(b=>b.addEventListener("click",()=>{ drafts.splice(+b.dataset.discard,1); renderDrafts(); }));
+  el.querySelectorAll("[data-discard]").forEach(b=>b.addEventListener("click",()=>{ removePhoto(drafts[+b.dataset.discard]?.photo); drafts.splice(+b.dataset.discard,1); renderDrafts(); }));
 }
 document.getElementById("parseBtn").addEventListener("click",async ()=>{
   const text=document.getElementById("logText").value.trim();
@@ -1153,7 +1224,6 @@ document.getElementById("parseBtn").addEventListener("click",async ()=>{
   }
 });
 /* goal, nudge preferences, people sub-views */
-document.querySelectorAll("#goalSeg button").forEach(b=>b.addEventListener("click",()=>{ DB.settings.weekGoal=+b.dataset.g; saveDB(); renderAll(); }));
 document.querySelectorAll("#nudgeSeg button").forEach(b=>b.addEventListener("click",()=>{ DB.settings.nudgeFreq=b.dataset.nf; DB.settings.nudgeSet=true; saveDB(); renderAll(); window.SamvarNative?.scheduleNudges({ask:true}); }));
 document.getElementById("nudgeTime").addEventListener("change",e=>{ DB.settings.nudgeTime=e.target.value; DB.settings.nudgeSet=true; saveDB(); renderAll(); window.SamvarNative?.scheduleNudges({ask:true}); });
 /* called by native.js once the Capacitor bridge is up */
@@ -1161,16 +1231,59 @@ function initNativeUI(){
   const n=window.SamvarNative; if(!n) return;
   document.getElementById("nudgeStatus").textContent="Nudges arrive as notifications at the time you choose.";
   const b=document.getElementById("pickContacts"); b.style.display="inline-flex"; b.textContent="📇 Add from Contacts";
-  b.onclick=async ()=>{
-    if(!entitled()){ paywallSheet("Start your free trial to add people."); return; }
-    try{ const c=await n.pickContact(); if(!c) return;
-      if(DB.people.some(p=>p.name.toLowerCase()===c.name.toLowerCase())){ alert(c.name+" is already in your circles."); return; }
-      askTier(c.name, tier=>{
-        const facts=c.birthday?[{f:"birthday "+c.birthday,kind:"date",ts:Date.now()}]:[];
-        DB.people.push({id:uid(),name:c.name,tier,aliases:[],added:Date.now(),tel:c.tel,addr:c.addr,email:c.email,facts}); saveDB(); renderAll(); n.haptic("success"); });
-    }catch(e){ /* cancelled */ }
+  b.onclick=()=>{ if(!entitled()){ paywallSheet("Start your free trial to add people."); return; } contactsSheet(); };
+  document.getElementById("contactsHint").textContent="Add from Contacts shows your address book so you can flag people straight into a circle. Only the people you flag are saved, and only on this phone.";
+}
+// Whole-address-book picker: flag each person into a circle, then add them all at once (with photo, number, address, birthday).
+async function contactsSheet(){
+  const n=window.SamvarNative;
+  const list=await n.allContacts();
+  if(!list){ alert("Samvar needs access to your contacts for this. You can allow it in Settings → Samvar → Contacts."); return; }
+  const have=new Set(DB.people.map(p=>p.name.toLowerCase()));
+  const pick={}; // contactId → tier
+  const dlg=document.createElement("dialog");
+  dlg.innerHTML=`<h2 style="font-size:17px;margin-bottom:6px">Flag people into circles</h2>
+    <p class="hint" style="margin:0 0 8px">Tap a circle next to each person you want in Samvar. Everyone else is ignored.</p>
+    <input type="search" id="cSearch" placeholder="Search ${list.length} contacts…" style="margin-bottom:8px">
+    <div id="cList" style="max-height:52vh;overflow:auto;margin:0 -4px"></div>
+    <div style="display:flex;gap:8px;margin-top:10px;align-items:center">
+      <button class="btn small" id="cAdd" disabled>Add 0 people</button>
+      <button class="btn ghost small" id="cCancel">Cancel</button><span class="hint" id="cProg"></span></div>`;
+  document.body.appendChild(dlg); dlg.showModal(); setTimeout(()=>dlg.querySelector("#cSearch").blur(),0);
+  const tiers=["inner","invest","warm"];
+  const render=()=>{
+    const q=dlg.querySelector("#cSearch").value.trim().toLowerCase();
+    const rows=list.filter(c=>!q||c.name.toLowerCase().includes(q)).slice(0,300);
+    dlg.querySelector("#cList").innerHTML=rows.map(c=>{
+      const inApp=have.has(c.name.toLowerCase());
+      return `<div style="padding:8px 4px;border-bottom:1px solid var(--ring)"><div style="display:flex;align-items:center;gap:10px">${av(c.name)}<div style="min-width:0;flex:1"><div class="nm" style="font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(c.name)}</div>
+        <div class="meta" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${inApp?"already in Samvar":[c.tel,c.birthday?"🎂 "+c.birthday:""].filter(Boolean).join(" · ")||"&nbsp;"}</div></div></div>
+        ${inApp?"":`<div class="seg" style="margin:6px 0 0 50px;flex-wrap:nowrap">${tiers.map(t=>`<button data-cid="${esc(c.contactId)}" data-t="${t}" class="${pick[c.contactId]===t?"on":""}" style="flex:1;padding:7px 4px;font-size:13px">${TIERS[t].label}</button>`).join("")}</div>`}</div>`;
+    }).join("")||`<div class="empty">No matches.</div>`;
+    dlg.querySelectorAll("[data-cid]").forEach(bt=>bt.addEventListener("click",()=>{
+      const id=bt.dataset.cid; if(pick[id]===bt.dataset.t) delete pick[id]; else pick[id]=bt.dataset.t;
+      bt.parentElement.querySelectorAll("button").forEach(x=>x.classList.toggle("on",pick[id]===x.dataset.t));
+      const k=Object.keys(pick).length; const add=dlg.querySelector("#cAdd"); add.disabled=!k; add.textContent=`Add ${k} ${k===1?"person":"people"}`;
+    }));
   };
-  document.getElementById("contactsHint").textContent="Add from Contacts brings the name, number and address across — only for the people you pick.";
+  render();
+  dlg.querySelector("#cSearch").addEventListener("input",render);
+  dlg.querySelector("#cCancel").addEventListener("click",()=>{ dlg.close(); dlg.remove(); });
+  dlg.querySelector("#cAdd").addEventListener("click",async ()=>{
+    const ids=Object.keys(pick); const prog=dlg.querySelector("#cProg"); dlg.querySelector("#cAdd").disabled=true;
+    const added=[];
+    for(let i=0;i<ids.length;i++){
+      const c=list.find(x=>x.contactId===ids[i]); if(!c) continue;
+      prog.textContent=`Adding ${i+1} of ${ids.length}…`;
+      const facts=c.birthday?[{f:"birthday "+c.birthday,kind:"date",ts:Date.now()}]:[];
+      let photo; try{ const b64=await n.contactPhoto(c.contactId); if(b64) photo=await storePhoto(b64); }catch(e){}
+      const p={id:uid(),name:c.name,tier:pick[c.contactId],aliases:[],added:Date.now(),tel:c.tel,addr:c.addr,email:c.email,facts,photo};
+      DB.people.push(p); added.push(p);
+    }
+    saveDB(); renderAll(); n.haptic("success"); dlg.close(); dlg.remove();
+    // Map their addresses in the background (one lookup per second; AI tidies any that fail).
+    (async ()=>{ for(const p of added){ if(!p.addr||p.loc) continue; const loc=await geocode(p.addr); if(loc){ p.loc={lat:loc.lat,lon:loc.lon}; saveDB(); } } renderAll(); })();
+  });
 }
 document.getElementById("nudgePreview").addEventListener("click",()=>{
   const n=nudgeText(), next=nextNudgeTimes(1)[0];
@@ -1204,22 +1317,6 @@ document.getElementById("apiSave").addEventListener("click",async ()=>{
     st.textContent="✓ Connected — Claude will now read your notes."; }
   catch(e){ st.textContent="✗ That key didn't work ("+e.message.slice(0,80)+")."; }
 });
-
-/* ---------- live dictation (webkitSpeechRecognition where supported) ---------- */
-const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-if(SR){
-  const btn=document.getElementById("liveMicBtn"); btn.style.display="block";
-  let rec=null, on=false;
-  btn.addEventListener("click",()=>{
-    if(on){ rec.stop(); return; }
-    rec=new SR(); rec.lang="en-GB"; rec.continuous=true; rec.interimResults=true;
-    const ta=document.getElementById("logText"); const base=ta.value?ta.value+" ":"";
-    rec.onresult=e=>{ let s=""; for(const r of e.results) s+=r[0].transcript; ta.value=base+s; };
-    rec.onend=()=>{ on=false; btn.classList.remove("mic-live"); btn.textContent="🎙 Live"; };
-    rec.onerror=()=>{ on=false; btn.classList.remove("mic-live"); btn.textContent="🎙 Live"; };
-    rec.start(); on=true; btn.classList.add("mic-live"); btn.textContent="■ Stop";
-  });
-}
 
 /* ---------- people / candidates ---------- */
 document.getElementById("newPersonBtn").addEventListener("click",()=>{
@@ -1560,7 +1657,7 @@ function switchPage(p){
   if(p==="people" && peopleView==="places") setTimeout(renderMap,80);
 }
 document.querySelectorAll("nav.tabs button").forEach(b=>b.addEventListener("click",()=>switchPage(b.dataset.p)));
-function renderAll(){ renderHome(); renderTriage(); renderPeople(); renderNetwork(); renderInsights(); renderSettingsUI(); }
+function renderAll(){ renderHome(); renderTriage(); renderPeople(); renderNetwork(); renderInsights(); renderSettingsUI(); hydratePhotos(); }
 switchPage("home");
 
 /* ---------- first-run welcome ---------- */

@@ -23,11 +23,6 @@
   <section class="page" id="page-home">
     <div id="onboard"></div>
     <div id="reflect"></div>
-    <div class="card t-butter" id="goalCard"></div>
-    <div id="bdayStrip"></div>
-    <div class="sect" style="margin-top:4px">Reach out today</div>
-    <div id="homeAttention"></div>
-    <div id="suggMore"></div>
     <div class="card tile t-lav" id="scoreTile">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
         <div>
@@ -40,6 +35,10 @@
       <div id="sparkWrap" style="margin-top:6px"></div>
       <div class="legend" id="ringsLegend" style="flex-direction:column;gap:6px;margin-top:10px"></div>
     </div>
+    <div id="bdayStrip"></div>
+    <div class="sect" style="margin-top:4px">Reach out today</div>
+    <div id="homeAttention"></div>
+    <div id="suggMore"></div>
     <div class="sect">Recent</div>
     <div class="card" id="homeRecent"></div>
   </section>
@@ -53,7 +52,6 @@
       <textarea id="logText" placeholder="Coffee with James this morning, I organised it, proper catch-up about his new role…"></textarea>
       <div style="display:flex;gap:8px;margin-top:10px">
         <button class="btn" id="parseBtn">Review &amp; score</button>
-        <button class="btn secondary small" id="liveMicBtn" style="display:none;white-space:nowrap">🎙 Live</button>
       </div>
       <p class="hint" id="aiNotice" style="display:none;margin-top:8px;padding:8px 10px;background:var(--tint-butter);border-radius:10px"></p>
     </div>
@@ -125,13 +123,6 @@
   <section class="page" id="page-settings">
     <div class="card t-lav" id="proCard"></div>
     <p class="hint" id="aiStatus" style="margin:-4px 0 12px 4px;cursor:pointer"></p>
-    <div class="card">
-      <h2 style="font-size:17px">Your weekly goal</h2>
-      <p class="hint">How many meaningful conversations you want each week. Streaks count the weeks you hit it.</p>
-      <div class="seg" style="margin-top:10px" id="goalSeg">
-        <button data-g="1">1</button><button data-g="2">2</button><button data-g="3">3</button><button data-g="4">4</button><button data-g="5">5</button><button data-g="7">7</button>
-      </div>
-    </div>
     <div class="card">
       <h2 style="font-size:17px">Nudges</h2>
       <p class="hint">When Samvar should remind you who to reach out to.</p>

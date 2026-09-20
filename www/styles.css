@@ -132,3 +132,5 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
 .badge{font-size:11px;font-weight:800;padding:3px 8px;border-radius:999px;background:var(--page);border:1px solid var(--ring);color:var(--ink-2)}
 
 input[type=date],input[type=time]{-webkit-appearance:none;appearance:none;display:block}
+
+.avatar[data-photo]{color:transparent}
