@@ -41,7 +41,8 @@ First release. Circles, voice-note logging, nudges, openers, weekly review, birt
 ## Support & marketing URLs
 - Support: `https://samvar.app/support`
 - Marketing: `https://samvar.app`
-- Privacy policy: `https://samvar.app/privacy` (required — see site/privacy.html)
+- Privacy policy: `https://samvar.app/privacy`
+- Terms (EULA): `https://samvar.app/terms` — also linked from the in-app paywall (guideline 3.1.2)
 
 ## Screenshots (required: 6.9" iPhone; optional 6.5" & iPad)
 Capture from the simulator with realistic seeded data. One headline per shot, dark-ink text on cream, phone slightly angled.
@@ -53,22 +54,38 @@ Capture from the simulator with realistic seeded data. One headline per shot, da
 5. **Score + rings** — "See your friendships in rhythm" (score, rings, streak)
 6. **Network** — "The groups that build themselves" (constellation)
 
-## App Privacy (nutrition label) — declare honestly
-- Data **not collected** by the developer: everything stays on device.
-- Pro AI features send the **note text** and stored **facts about people** to Samvar's server, which forwards to Anthropic for processing and does not store them. Declare: *Data used for App Functionality, not linked to identity, not used for tracking.*
-- Addresses typed into the app are sent to OpenStreetMap (Nominatim) for geocoding. Declare under Location → Coarse Location, App Functionality.
-- Contacts: read only when the user picks contacts; names/phones stored on device only.
-- No third-party analytics or ads SDKs in v1.
+## App Privacy (nutrition label) — answers to give in App Store Connect
 
-## Review notes (for Apple's reviewer)
-"Samvar stores all data on device. The app requires the Samvar Pro subscription after a 7-day free trial; in the sandbox, tap Start free trial on the first screen to unlock it. Then add three people on the People tab, and on Log type 'Coffee with Sarah this morning, I organised it, long chat about her new job' and tap Review & score. Nudges appear on Today."
+Start: **Yes, we collect data from this app** (because note text is sent to our server for AI processing, even though it isn't stored). Then, for each data type:
 
-## Pre-submission checklist
-- [ ] Apple Developer Program enrolment approved
-- [ ] Domain registered; privacy + support pages live
-- [ ] App icon 1024×1024 PNG (no alpha) uploaded — from branding/icon.svg
-- [ ] Subscription products created in App Store Connect (monthly, yearly) + intro offer
-- [ ] Paid Apps agreement signed, bank + tax forms complete
-- [ ] Test on a real iPhone via TestFlight (notifications, contacts, sms: links)
-- [ ] Sign in with Apple: not needed (no accounts)
-- [ ] Export compliance: uses only HTTPS → "No" to proprietary encryption
+| Data type | Collected? | Linked to identity? | Used for tracking? | Purpose |
+|---|---|---|---|---|
+| Contacts → Contacts | **No** — read on device, never sent | — | — | — |
+| User Content → Other user content (note text, stored facts, first names, town, employer) | **Yes** | No | No | App functionality |
+| Location → Coarse location (address text / "Near me" coordinates sent to OpenStreetMap) | **Yes** | No | No | App functionality |
+| Identifiers → Device ID (random ID Samvar generates; RevenueCat app user ID) | **Yes** | No | No | App functionality |
+| Purchases → Purchase history (subscription status via RevenueCat) | **Yes** | No | No | App functionality |
+| Photos, Calendar, Health, Contacts, Email, Messages, Browsing, Usage data, Diagnostics | No | — | — | — |
+
+"Data not linked to you" for everything; nothing is used for tracking; no third-party advertising. Say **No** to "Do you or your third-party partners use data for tracking".
+
+## App Review notes (paste into "Notes" on the version page)
+
+Samvar keeps all user data on the device; there are no accounts, so no demo login is needed. AI features (understanding a logged note, suggesting a message) send the note text to our server at api.samvar.app, which forwards it to Anthropic's Claude API and returns the result without storing it. Everything is free until the reviewer has added 8 people and logged 3 conversations; after that the paywall offers Samvar Pro with a 7-day free trial (products samvar_pro_monthly / samvar_pro_yearly), which can be exercised with a sandbox account. Contacts access is used to let the user flag people from their address book into circles; only flagged people are saved. Calendar is read-only, to offer to log recent meetings. Camera/Photos are used only when the user adds a photo. The home-screen widget and Siri shortcuts read a small snapshot from the app group. Suggested messages are drafts the user edits and sends themselves via Messages/WhatsApp/Mail; the app never sends anything on its own.
+
+## Pre-submission checklist (App Review)
+
+- [x] Privacy policy, support and terms pages live at samvar.app; URLs in App Store Connect.
+- [x] Paywall shows price + period + auto-renew wording, and links to Terms of Use and Privacy Policy (3.1.2).
+- [x] Restore Purchases button on the paywall and under You.
+- [x] Permission purpose strings for Contacts, Calendar, Camera, Photos, Photo Library Add, Location.
+- [x] Export compliance: ITSAppUsesNonExemptEncryption = false.
+- [x] No account, so no account-deletion requirement.
+- [x] In-app copy no longer claims "everything stays on your phone" without qualification.
+- [ ] Both subscriptions "Ready to Submit" in App Store Connect (localisation + review screenshot) and attached to the version.
+- [ ] App Privacy answers entered as above.
+- [ ] 6.9" iPhone screenshots (6) uploaded.
+- [ ] Age rating questionnaire (4+).
+- [ ] EU trader status verified (or EU excluded from availability).
+- [ ] hello@ / privacy@ samvar.app mailboxes actually receive mail (Cloudflare Email Routing → your Gmail).
+- [ ] Version 1.0 build selected; "Manually release" chosen so you pick launch day.

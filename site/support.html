@@ -1,43 +1,48 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Samvar — Support</title>
-<style>
-  body{font-family:-apple-system,system-ui,"Segoe UI",sans-serif;background:#faf6ee;color:#33302b;margin:0;line-height:1.55}
-  main{max-width:680px;margin:0 auto;padding:40px 20px 80px}
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Samvar — Support</title><meta name="description" content="Help for Samvar: adding people, circles, logging conversations, nudges, the widget, Siri, data and subscriptions."><style>
+  :root{--page:#faf6ee;--ink:#33302b;--muted:#948f85;--accent:#2a78d6;--card:#fff;--ring:rgba(70,55,25,.12)}
+  body{font-family:-apple-system,system-ui,"Segoe UI",sans-serif;background:var(--page);color:var(--ink);margin:0;line-height:1.55}
+  main{max-width:680px;margin:0 auto;padding:36px 20px 80px}
   h1{font-size:28px;letter-spacing:-.02em;margin:0 0 4px}
   h2{font-size:18px;margin:28px 0 8px}
-  .meta{color:#948f85;font-size:14px}
-  a{color:#2a78d6}
-  details{border:1px solid rgba(70,55,25,.12);border-radius:12px;padding:10px 14px;margin:8px 0;background:#fff}
+  .meta{color:var(--muted);font-size:14px}
+  a{color:var(--accent)}
+  nav.top{display:flex;gap:14px;align-items:center;font-size:14px;margin-bottom:26px}
+  nav.top a{color:var(--ink);text-decoration:none;font-weight:600}
+  nav.top .brand{font-size:20px;font-weight:800;letter-spacing:-.02em;margin-right:auto}
+  details{border:1px solid var(--ring);border-radius:12px;padding:10px 14px;margin:8px 0;background:var(--card)}
   summary{font-weight:700;cursor:pointer}
-</style>
-</head>
-<body>
-<main>
-  <h1>Samvar Support</h1>
-  <p class="meta">Questions, bugs and ideas: <a href="mailto:hello@samvar.app">hello@samvar.app</a>. A real person replies, usually within two days.</p>
+  footer{max-width:680px;margin:0 auto;padding:0 20px 40px;color:var(--muted);font-size:13px}
+  footer a{color:var(--muted)}
+  ul{padding-left:20px} li{margin:6px 0}
+</style></head>
+<body><main><nav class="top"><a class="brand" href="/">🌱 Samvar</a><a href="/support">Support</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></nav>
+<h1>Samvar Support</h1>
+<p class="meta">Questions, bugs and ideas: <a href="mailto:hello@samvar.app">hello@samvar.app</a>. A real person replies, usually within two days.</p>
 
-  <h2>Getting started</h2>
-  <details><summary>Who should I add first?</summary><p>Start with your inner circle — the three to five people you'd drop everything for — then the friends you're actively trying to get closer to ("Close"). Everyone else can wait in "Friendly".</p></details>
-  <details><summary>How do I log a conversation?</summary><p>Open Log, tap the box, and either type or use the microphone key on your keyboard. Say who you saw, who suggested it, and roughly how deep it went — Samvar works out the rest and shows you a draft to check before saving.</p></details>
-  <details><summary>Why isn't someone showing as overdue?</summary><p>Each circle has a rhythm: Inner weekly, Close monthly, Friendly quarterly. Someone only appears in "Reach out today" once they've gone quiet longer than that. Newly added people get a grace period.</p></details>
+<h2>Getting started</h2>
+<details><summary>How do I add people?</summary><p>People → <b>Add from Contacts</b> shows your address book. Tap Inner, Close or Friendly next to each person you want, then <b>Add</b>. Their photo, number, address, birthday and employer come across, and stay in step with their contact card from then on. You can also type a name into the box at the top.</p></details>
+<details><summary>What do the circles mean?</summary><p><b>Inner</b> — about 5 people, the ones you'd drop everything for; aim to talk every week. <b>Close</b> — about 15 good friends you want to keep building; every month. <b>Friendly</b> — about 50 people you'd hate to lose touch with; every quarter. Tap the <b>i</b> at the top of Today any time to see this.</p></details>
+<details><summary>How do I log a conversation?</summary><p>Open <b>Log</b>, tap the box, and type or use the microphone key on your keyboard. Say who you saw, how, and what you talked about. Samvar works out who it was, whether it was a quick catch-up or quality time, and files the things worth remembering (birthdays, family, moves, jobs). Check the draft and tap Save. In the evening, the <b>Who did you talk to today?</b> check-in lets you log quick catch-ups by tapping faces.</p></details>
+<details><summary>Why is someone (or no one) in “Next up”?</summary><p>Reminders start in the last third of each circle's rhythm — Close from about day 20 of the month, Friendly from about month two of the quarter — except Inner, where they only start once two full weeks have passed. Anyone you've never logged a conversation with can come up straight away. If nobody qualifies, Today says everyone's in rhythm.</p></details>
+<details><summary>What is free and what is Pro?</summary><p>Everything is free until you've added 8 people and logged 3 conversations. After that, Samvar Pro is a 7-day free trial, then a monthly or yearly subscription at your local App Store price. Pro covers everything: unlimited people and notes, AI understanding of your notes, suggested messages, nudges, the widget and Siri.</p></details>
 
-  <h2>Nudges &amp; openers</h2>
-  <details><summary>Nudges aren't arriving</summary><p>Check You → Nudges isn't set to Off, and that iOS Settings → Samvar → Notifications is allowed. Nudges are scheduled on your phone at the time you chose.</p></details>
-  <details><summary>The opener didn't mention anything specific</summary><p>Openers draw on the facts stored for that person. Log a few conversations with details ("she's training for a half marathon in March") and they'll get better. The personalised versions are part of Samvar Pro.</p></details>
+<h2>Suggested messages and nudges</h2>
+<details><summary>How does “Suggest a message” work?</summary><p>Samvar drafts three short openers from your past conversations with that person, the facts you've stored, where they work if it's on their contact card, and — if they have an address — the weather or something happening in their town this week. It never invents facts. Edit freely, then Send, WhatsApp or Copy.</p></details>
+<details><summary>The suggestions feel generic</summary><p>Log a few conversations with detail (“she's training for a half marathon in March”) and add an address; suggestions get noticeably better. The <b>i</b> button and the intro (You → replay) explain what feeds them.</p></details>
+<details><summary>Notifications aren't arriving</summary><p>Check You → Settings → Notifications isn't set to Off, and that iPhone Settings → Samvar → Notifications is allowed. The morning nudge, evening check-in and Sunday digest are scheduled on your phone at the times you chose.</p></details>
+<details><summary>The widget shows nothing</summary><p>Open Samvar once after adding the widget; it refreshes each time the app is used. Add it from the home-screen widget gallery (“Samvar — Next up”) or the lock screen.</p></details>
+<details><summary>Siri</summary><p>Say “Log a conversation in Samvar” and Siri will ask who and how; it's filed the next time you open the app. “Who should I reach out to in Samvar” opens Today. Both also appear in the Shortcuts app.</p></details>
 
-  <h2>Your data</h2>
-  <details><summary>Moving to a new phone</summary><p>You → Your data → Download backup on the old phone, then Import backup on the new one. Samvar has no cloud copy, so this file is the only way to move your history.</p></details>
-  <details><summary>Deleting everything</summary><p>You → Erase all data removes everything from the device immediately. Deleting the app does the same.</p></details>
+<h2>Your data</h2>
+<details><summary>Moving to a new phone</summary><p>You → Your data → Download backup on the old phone (it opens the share sheet — save the file), then Import backup on the new one. Samvar has no cloud copy, so this file is the only way to move your history.</p></details>
+<details><summary>Someone was deleted from my Contacts</summary><p>Samvar asks whether to keep their history. Keep moves them to Archived, where they no longer count in your circles; Delete removes them and their conversations.</p></details>
+<details><summary>Deleting everything</summary><p>You → Erase all data removes everything from the device immediately. Deleting the app does the same.</p></details>
 
-  <h2>Subscriptions</h2>
-  <details><summary>Managing or cancelling Samvar Pro</summary><p>Subscriptions are handled by Apple: iPhone Settings → your name → Subscriptions → Samvar. Cancelling keeps Pro until the end of the period you've paid for.</p></details>
-  <details><summary>Restoring a purchase</summary><p>You → Samvar Pro → Restore purchases, signed in with the same Apple ID.</p></details>
+<h2>Subscriptions</h2>
+<details><summary>Managing or cancelling Samvar Pro</summary><p>Subscriptions are handled by Apple: iPhone Settings → your name → Subscriptions → Samvar. Cancelling keeps Pro until the end of the period you've paid for.</p></details>
+<details><summary>Restoring a purchase</summary><p>You → Samvar Pro → Restore purchases, signed in with the same Apple ID.</p></details>
 
-  <p class="meta"><a href="privacy.html">Privacy policy</a></p>
-</main>
-</body>
-</html>
+<p class="meta" style="margin-top:28px"><a href="/privacy">Privacy policy</a> · <a href="/terms">Terms of use</a></p>
+</main><footer>Samvar is made by Gerry Fowler, United Kingdom · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a> · <a href="/support">Support</a> · <a href="mailto:hello@samvar.app">hello@samvar.app</a></footer></body></html>

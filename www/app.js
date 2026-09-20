@@ -206,13 +206,14 @@ function paywallSheet(reason){
     <div class="factline" style="font-size:14px"><span class="fk">✨</span><span><b>Claude reads your notes</b> — several people in one ramble, relative dates, facts worth remembering.</span></div>
     <div class="factline" style="font-size:14px"><span class="fk">💬</span><span><b>Openers written for you</b> from what you actually know about each person.</span></div>
     <div class="factline" style="font-size:14px"><span class="fk">☀️</span><span><b>Daily nudges</b>, birthday radar and streaks.</span></div>
-    <div class="factline" style="font-size:14px"><span class="fk">∞</span><span><b>Unlimited</b> people, notes and openers. Everything stays on your phone.</span></div>
+    <div class="factline" style="font-size:14px"><span class="fk">∞</span><span><b>Unlimited</b> people, notes and openers. Your data stays on your phone.</span></div>
     <button class="btn" data-buy="monthly" style="margin-top:14px">Start free trial · monthly</button>
     <button class="btn secondary" data-buy="yearly" style="margin-top:8px">Start free trial · yearly</button>
     <div style="display:flex;gap:8px;margin-top:10px">
       <button class="btn ghost small" id="pwRestore">Restore purchases</button>
       <button class="btn ghost small" id="pwClose">Not now</button></div>
-    <p class="hint" style="text-align:center;margin-top:10px">Free for 7 days, then renews automatically unless cancelled. Cancel any time in Settings → Subscriptions; you keep everything until the trial ends.</p>`;
+    <p class="hint" style="text-align:center;margin-top:10px">Free for 7 days, then renews automatically unless cancelled at least 24 hours before the end of the period. Payment is charged to your Apple ID. Cancel any time in Settings → Subscriptions; you keep everything until the trial ends.</p>
+    <p class="hint" style="text-align:center;margin-top:6px"><a href="https://samvar.app/terms" target="_blank" rel="noopener" style="color:var(--accent)">Terms of Use</a> · <a href="https://samvar.app/privacy" target="_blank" rel="noopener" style="color:var(--accent)">Privacy Policy</a></p>`;
   document.body.appendChild(dlg); dlg.showModal();
   const close=()=>{ dlg.close(); dlg.remove(); };
   // Prices come from the App Store via RevenueCat so every country sees its own currency.
@@ -1989,7 +1990,7 @@ function showIntro(force){
       <div class="factline" style="font-size:14px"><span class="fk">📍</span><span>Their <b>address</b> — so it can mention the weather or something happening in their town this week. That's why addresses matter.</span></div>
       <div class="card" style="padding:10px 12px;margin-top:8px"><p class="hint" style="margin:0;font-style:italic">“How's the Bristol move going — drowning in boxes yet? Hope you're surviving the heat down there this week!”</p></div>`},
     {title:"Ready?", body:`<p class="hint" style="margin:0 0 10px;font-size:14px">Every morning Samvar names one person to reach out to, with the buttons to do it. Log it and your streak grows.</p>
-      <p class="hint" style="margin:0 0 10px">Free to start — add ${FREE_PEOPLE} people and log ${FREE_LOGS} conversations, then a 7-day free trial. Everything stays on your phone.</p>`}
+      <p class="hint" style="margin:0 0 10px">Free to start — add ${FREE_PEOPLE} people and log ${FREE_LOGS} conversations, then a 7-day free trial. Your data stays on your phone; notes are sent to Samvar AI only to be understood, and never stored.</p>`}
   ];
   let i=0; const dlg=document.createElement("dialog");
   const render=()=>{ const st=steps[i], last=i===steps.length-1;

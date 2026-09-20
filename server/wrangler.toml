@@ -4,7 +4,17 @@ compatibility_date = "2026-06-01"
 compatibility_flags = ["nodejs_compat"]
 
 # Custom domain — set up in Cloudflare after the domain is registered.
-routes = [{ pattern = "api.samvar.app", custom_domain = true }]
+routes = [
+  { pattern = "api.samvar.app", custom_domain = true },
+  { pattern = "samvar.app", custom_domain = true },
+  { pattern = "www.samvar.app", custom_domain = true }
+]
+
+# The public site (privacy, support, terms, landing) is served as static assets from ../site.
+[assets]
+directory = "../site"
+html_handling = "auto-trailing-slash"
+not_found_handling = "404-page"
 
 [vars]
 MODEL = "claude-sonnet-5"

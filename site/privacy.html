@@ -1,58 +1,69 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Samvar — Privacy Policy</title>
-<style>
-  body{font-family:-apple-system,system-ui,"Segoe UI",sans-serif;background:#faf6ee;color:#33302b;margin:0;line-height:1.55}
-  main{max-width:680px;margin:0 auto;padding:40px 20px 80px}
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Samvar — Privacy Policy</title><meta name="description" content="How Samvar handles your data: everything stays on your phone; only what's needed to draft a message is sent, and never stored."><style>
+  :root{--page:#faf6ee;--ink:#33302b;--muted:#948f85;--accent:#2a78d6;--card:#fff;--ring:rgba(70,55,25,.12)}
+  body{font-family:-apple-system,system-ui,"Segoe UI",sans-serif;background:var(--page);color:var(--ink);margin:0;line-height:1.55}
+  main{max-width:680px;margin:0 auto;padding:36px 20px 80px}
   h1{font-size:28px;letter-spacing:-.02em;margin:0 0 4px}
   h2{font-size:18px;margin:28px 0 8px}
-  .meta{color:#948f85;font-size:14px}
-  a{color:#2a78d6}
-</style>
-</head>
-<body>
-<main>
-  <h1>Samvar Privacy Policy</h1>
-  <p class="meta">Last updated: 19 September 2026 · Applies to the Samvar iOS app and samvar.app</p>
+  .meta{color:var(--muted);font-size:14px}
+  a{color:var(--accent)}
+  nav.top{display:flex;gap:14px;align-items:center;font-size:14px;margin-bottom:26px}
+  nav.top a{color:var(--ink);text-decoration:none;font-weight:600}
+  nav.top .brand{font-size:20px;font-weight:800;letter-spacing:-.02em;margin-right:auto}
+  details{border:1px solid var(--ring);border-radius:12px;padding:10px 14px;margin:8px 0;background:var(--card)}
+  summary{font-weight:700;cursor:pointer}
+  footer{max-width:680px;margin:0 auto;padding:0 20px 40px;color:var(--muted);font-size:13px}
+  footer a{color:var(--muted)}
+  ul{padding-left:20px} li{margin:6px 0}
+</style></head>
+<body><main><nav class="top"><a class="brand" href="/">🌱 Samvar</a><a href="/support">Support</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></nav>
+<h1>Samvar Privacy Policy</h1>
+<p class="meta">Last updated: 20 September 2026 · Applies to the Samvar iOS app and samvar.app</p>
+<p>Samvar is built around a simple idea: the people in your life are yours, not ours. This policy explains exactly what the app does with information, in plain language. The short version: your data lives on your phone, there are no accounts, and the only things that ever leave your phone are the specific pieces needed to draft or understand a message, sent for that moment and not stored by us.</p>
 
-  <p>Samvar is built around a simple idea: the people in your life are yours, not ours. This policy explains exactly what the app does with information, in plain language.</p>
+<h2>What Samvar stores, and where</h2>
+<p>Everything you put into Samvar — people, circles, conversation notes, facts, photos, phone numbers, addresses, birthdays, employers, streaks and scores — is stored only on your device, in the app's own storage and in a small shared area that the home-screen widget and Siri shortcuts can read. Samvar has no user accounts and keeps no copy of your data on any server. If you delete the app, that data is gone unless you exported a backup first. Backups are ordinary files you control.</p>
 
-  <h2>What Samvar stores, and where</h2>
-  <p>The names, circles, notes, facts, phone numbers, addresses and interaction history you enter are stored <strong>only on your device</strong>. Samvar has no user accounts and no server-side copy of your data. If you delete the app, that data is gone unless you exported a backup file first. Backups are ordinary files you control.</p>
+<h2>What leaves your device, and why</h2>
+<ul>
+  <li><b>Understanding your notes and drafting messages (Samvar AI).</b> When you tap <i>Review &amp; score</i> on a note, or <i>Suggest a message</i> / <i>Opener</i> for a person, Samvar sends the text of that note, the first names of the people involved, the facts you have stored about them, their employer and job title if their contact card has one, and the town from their address (not the street) over an encrypted connection to Samvar's server. The server forwards it to Anthropic's Claude API to be understood or drafted, and returns the result. Samvar's server does not store the content of these requests; it keeps only a per-device count of requests. Anthropic processes the content under its commercial API terms, which do not permit it to train on your data; Anthropic may retain API inputs for a limited period for safety and abuse prevention under its own policy. The server is identified by a random device ID that Samvar generates on first run; it is not linked to your name, Apple ID or email.</li>
+  <li><b>Local context for messages.</b> To make a suggested message feel current, Samvar's server may run a web search for the <i>town</i> named in a person's address (for example "Bristol, UK") to find that week's weather or a local event. Only the town is searched, never the person's name or street. Results are cached for a day and shared across all users of the app for that town.</li>
+  <li><b>Tidying addresses.</b> If an address cannot be found on the map, its text (never the person's name) is sent to Samvar AI to be normalised, then looked up again.</li>
+  <li><b>Maps.</b> Addresses and, if you use <i>Near me</i>, your approximate coordinates are sent to OpenStreetMap's Nominatim service to find locations. Results are cached on your device.</li>
+  <li><b>Subscriptions.</b> Samvar Pro is bought through Apple. Apple provides RevenueCat, our subscription service, and Samvar's server with an anonymous receipt confirming that the subscription is active, tied to the same random device ID. We never see your payment details.</li>
+</ul>
 
-  <h2>What leaves your device</h2>
-  <ul>
-    <li><strong>AI features (Samvar Pro).</strong> When you use "Review &amp; score" on a note or "Opener" on a person, the text of that note and the facts you have stored about the people involved are sent over an encrypted connection to Samvar's server, which forwards them to Anthropic's Claude API to be understood or drafted, and returns the result. Samvar's server does not store the content of these requests. Anthropic processes them under its <a href="https://www.anthropic.com/legal/commercial-terms">commercial terms</a>, which do not permit training on this data. If you are not a Pro subscriber and use the simple built-in rules instead, nothing is sent.</li>
-    <li><strong>Places.</strong> If you type an address for a person or use "Near me", the address or your approximate coordinates are sent to OpenStreetMap's Nominatim service to find a location. Results are cached on your device. You can use Samvar fully without ever adding an address.</li>
-    <li><strong>Contacts.</strong> If you choose to import from Contacts, Samvar reads only the entries you pick, and only names, phone numbers and addresses. They are stored on your device and never uploaded.</li>
-    <li><strong>Messages.</strong> "Send" hands a drafted message to the Messages or WhatsApp app on your phone. Samvar does not send messages itself and cannot read your conversations.</li>
-    <li><strong>Notifications.</strong> Nudges are scheduled locally on your device. No push server is involved.</li>
-  </ul>
+<h2>Permissions Samvar may ask for</h2>
+<ul>
+  <li><b>Contacts.</b> Used to show your address book so you can flag people into circles, and to keep those people's details in step with their contact cards (name, numbers, email, address, birthday, employer, job title, photo, profile links). Only the people you flag are saved; the rest are read on screen and discarded. Nothing from Contacts is uploaded.</li>
+  <li><b>Calendar.</b> Read only, to spot recent events whose title or attendees match one of your people and offer to log them. Event details stay on your device.</li>
+  <li><b>Camera and Photos.</b> Only when you choose to add a photo to a person or a conversation. Photos stay on your device.</li>
+  <li><b>Location.</b> Only when you use <i>Near me</i> or the location pin when logging. Never uploaded except as described under Maps.</li>
+  <li><b>Notifications.</b> Nudges, the evening check-in and the Sunday digest are scheduled on your device. No push server is involved.</li>
+</ul>
 
-  <h2>What Samvar does not do</h2>
-  <ul>
-    <li>No advertising, and no advertising or analytics SDKs.</li>
-    <li>No selling, sharing or renting of your information to anyone.</li>
-    <li>No tracking across other apps or websites.</li>
-    <li>No account, email address or password required.</li>
-  </ul>
+<h2>What Samvar does not do</h2>
+<ul>
+  <li>No advertising, and no advertising or analytics SDKs.</li>
+  <li>No selling, sharing or renting of your information to anyone.</li>
+  <li>No tracking across other apps or websites.</li>
+  <li>No account, email address or password required.</li>
+  <li>No searching for information about your friends by name.</li>
+</ul>
 
-  <h2>Subscriptions</h2>
-  <p>Samvar Pro is purchased through Apple. Apple handles payment and provides Samvar only with an anonymous receipt confirming the subscription is active. We never see your card details.</p>
+<h2>Messages and calls</h2>
+<p>The Call, Text, Email and WhatsApp buttons simply open the relevant app on your phone with the number or address. Samvar does not send messages itself and cannot read your conversations, calls or email.</p>
 
-  <h2>Children</h2>
-  <p>Samvar is not directed at children under 13 and does not knowingly collect information from them.</p>
+<h2>Children</h2>
+<p>Samvar is not directed at children under 13 and does not knowingly collect information from them.</p>
 
-  <h2>Your rights</h2>
-  <p>Because your data lives on your device, you already have complete access to it, can export it at any time (You → Your data → Download backup) and can erase it (You → Erase all data). If you have used Pro features and want to ask about any request logs, or have any other question, email <a href="mailto:privacy@samvar.app">privacy@samvar.app</a>. Users in the UK and EU have the rights set out in UK GDPR and GDPR, including the right to complain to the ICO or your local supervisory authority.</p>
+<h2>Your rights and choices</h2>
+<p>Because your data lives on your device, you already have complete access to it. You can export it at any time (You → Your data → Download backup) and erase it (You → Erase all data, or delete the app). You can use Samvar without any of the permissions above; the related features simply stay off. If you have any question, or want to ask about the request counts our server keeps, email <a href="mailto:privacy@samvar.app">privacy@samvar.app</a>. Users in the UK and EU have the rights set out in UK GDPR and GDPR, including the right to complain to the ICO or your local supervisory authority.</p>
 
-  <h2>Changes</h2>
-  <p>If this policy changes in a way that matters, the app will tell you on launch and the date at the top of this page will be updated.</p>
+<h2>Service providers</h2>
+<p>Anthropic (AI processing), Cloudflare (hosting of Samvar's server, in its global network), RevenueCat (subscription status), Apple (App Store, payments) and OpenStreetMap Nominatim (maps). Each receives only what is described above.</p>
 
-  <p class="meta">Samvar is made by Gerry Fowler, United Kingdom.</p>
-</main>
-</body>
-</html>
+<h2>Changes</h2>
+<p>If this policy changes in a way that matters, the app will tell you on launch and the date at the top of this page will be updated.</p>
+</main><footer>Samvar is made by Gerry Fowler, United Kingdom · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a> · <a href="/support">Support</a> · <a href="mailto:hello@samvar.app">hello@samvar.app</a></footer></body></html>
