@@ -369,11 +369,14 @@ async function aiParse(text){
 
 /* ---------- charts (dataviz spec: thin marks, 2px line, hover layer) ---------- */
 const tooltip=document.getElementById("tooltip");
-function showTip(html,x,y){ tooltip.innerHTML=html; tooltip.style.display="block";
+let tipTimer=null;
+function showTip(html,x,y){ tooltip.innerHTML=html; tooltip.style.display="block"; clearTimeout(tipTimer); tipTimer=setTimeout(hideTip,2500);
   const r=tooltip.getBoundingClientRect();
   tooltip.style.left=Math.min(innerWidth-r.width-8,Math.max(8,x-r.width/2))+"px";
   tooltip.style.top=(y-r.height-14)+"px"; }
-function hideTip(){ tooltip.style.display="none"; }
+function hideTip(){ tooltip.style.display="none"; clearTimeout(tipTimer); }
+window.addEventListener("scroll",hideTip,{passive:true});
+document.addEventListener("pointerdown",ev=>{ if(!ev.target.closest(".ringseg")) hideTip(); },true);
 
 function sparkline(el, series){
   if(!series.length){ el.innerHTML=""; return; }
@@ -803,18 +806,24 @@ function renderHome(){
   }));
 }
 
-const MIN_QUIET_DAYS=5; // never suggest someone you've spoken to in the last 5 days
+// A person is worth a reminder only in the LAST THIRD of their circle's reminder window
+// (Inner 14d → from day 9.3, Close 30d → from day 20, Friendly 90d → from day 60), or if you've never spoken.
+function reminderWindow(p){ const t=TIERS[p.tier]; return t&&t.cadence?(t.remind||t.cadence):0; }
+function eligibleForReminder(p, now){
+  const w=reminderWindow(p); if(!w) return null;
+  if(p.snoozeUntil && p.snoozeUntil>now) return null;
+  const last=lastContact(p,now);
+  if(!last) return {last:null, days:p.added?(now-p.added)/DAY:0, frac:1, never:true};
+  const days=(now-last)/DAY, frac=days/w;
+  return frac>=2/3 ? {last, days, frac, never:false} : null;
+}
 function suggestions(){
   const now=Date.now(), out=[];
   for(const p of DB.people){
-    const t=TIERS[p.tier]; if(!t||!t.cadence) continue;
-    if(p.snoozeUntil && p.snoozeUntil>now) continue;
-    const last=lastContact(p,now);
-    const days=last?(now-last)/DAY:(p.added?(now-p.added)/DAY:999); // new people get a grace period
-    if(days<MIN_QUIET_DAYS) continue;            // spoke recently — no reminder
-    const overdue=days/(t.remind||t.cadence);   // Inner: only once two weeks have passed
-    if(overdue<1) continue;
-    out.push({p, last, days:Math.round(days), urgency:overdue*t.weight});
+    const e=eligibleForReminder(p,now); if(!e) continue;
+    const t=TIERS[p.tier];
+    // overdue = past the window; "in the last third" people are listed too, ranked by how close they are
+    out.push({p, last:e.last, days:Math.round(e.days), never:e.never, urgency:(e.never?0.9:e.frac)*t.weight});
   }
   return out.sort((a,b)=>b.urgency-a.urgency);
 }
@@ -861,21 +870,19 @@ const KIND_LABEL={deepen:"Go deeper",promote:"Closer than you think",introduce:"
 function todaysPick(nudgeList){
   const now=Date.now(); let best=null;
   for(const p of DB.people){
-    const t=TIERS[p.tier]; if(!t||!t.cadence||(p.snoozeUntil&&p.snoozeUntil>now)||dismissed("pick:"+p.id)) continue;
-    const last=lastContact(p,now); if(!last) continue;
-    const since=(now-last)/DAY; if(since<MIN_QUIET_DAYS) continue;
-    const left=(t.remind||t.cadence)-since; // days until they slip past the reminder threshold
-    // Close and Friendly first — those are the ones that quietly drift; Inner only once it's been a while.
-    const rank=(p.tier==="inner"?100:0)+left;
-    if(left>0 && (!best||rank<best.rank)) best={p,last,left,t,rank};
+    if(dismissed("pick:"+p.id)) continue;
+    const e=eligibleForReminder(p,now); if(!e) continue;
+    const t=TIERS[p.tier], w=reminderWindow(p), left=e.never?0:w-e.days;
+    // Order: past the window first, then never-contacted, then closest to the window; Close/Friendly before Inner.
+    const rank=(left<=0&&!e.never?0:e.never?1000:2000)+(p.tier==="inner"?500:0)+Math.max(0,left);
+    if(!best||rank<best.rank) best={p,last:e.last,left,t,rank,never:e.never,overdue:left<=0&&!e.never};
   }
-  const od=nudgeList.find(n=>n.kind==="overdue"); if(od) return {kind:"pick",p:od.p,last:od.last,left:0,t:TIERS[od.p.tier],overdue:true};
-  if(best && best.left<=Math.max(3,(best.t.remind||best.t.cadence)*0.35)) return {kind:"pick",p:best.p,last:best.last,left:best.left,t:best.t};
-  return best?{kind:"pick",p:best.p,last:best.last,left:best.left,t:best.t}:null;
+  return best?{kind:"pick",p:best.p,last:best.last,left:best.left,t:best.t,overdue:best.overdue,never:best.never}:null;
 }
 function pickBlock(n){
   const p=n.p, h=healthOfP(p,Date.now()), days=Math.max(1,Math.round(n.left));
-  const why=n.overdue?`Already <b>${fmtAgo(n.last)}</b> since you spoke — past the ${n.t.rhythm} rhythm for your ${n.t.label} circle.`
+  const why=n.never?`You haven't logged a conversation with them yet — a first message is the easiest one to send.`
+    :n.overdue?`Already <b>${fmtAgo(n.last)}</b> since you spoke — past the ${n.t.rhythm} rhythm for your ${n.t.label} circle.`
     :`Last contact <b>${fmtAgo(n.last)}</b>. In about <b>${days} day${days===1?"":"s"}</b> they slip out of your ${n.t.rhythm} rhythm — a small message now keeps it easy.`;
   const facts=(p.facts||[]).length?`<div class="why">💡 ${p.facts.slice(-2).map(f=>esc(f.f)).join(" · ")}</div>`:"";
   return `<div class="sugg" data-pid="${p.id}" data-key="pick:${p.id}" data-kind="pick" style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(0,0,0,.08)">
@@ -1127,7 +1134,7 @@ function nudgeText(){
   for(const b of upcomingBirthdays(1)) if(b.days===0) return {title:`🎂 ${capName(b.p)}'s birthday today`, body:"A message now will make their day.", pid:b.p.id};
   const fu=nudges().find(n=>n.kind==="followup"); if(fu) return {title:`Ask ${capName(fu.p)} how it went`, body:fu.fact.f, pid:fu.p.id};
   if(pick){ const p=pick.p, t=pick.t;
-    const body=pick.overdue?`It's been ${fmtAgo(pick.last)} — past your ${t.rhythm} rhythm. One message today keeps it easy.`
+    const body=pick.never?`You haven't logged a conversation with ${capName(p)} yet. A first hello is the easiest message to send.`:pick.overdue?`It's been ${fmtAgo(pick.last)} — past your ${t.rhythm} rhythm. One message today keeps it easy.`
       :`${Math.max(1,Math.round(pick.left))} day${Math.round(pick.left)===1?"":"s"} before they slip out of your ${t.rhythm} rhythm. A small message now keeps it easy.`;
     return {title:`${capName(p)} is next`, body, pid:p.id}; }
   const b=upcomingBirthdays(3)[0]; if(b) return {title:`🎂 ${capName(b.p)}'s birthday ${b.days===1?"tomorrow":"in "+b.days+" days"}`, body:"Get in first.", pid:b.p.id};
@@ -1267,7 +1274,8 @@ function personSheet(pid){
         <div class="meta" style="display:flex;align-items:center;gap:6px">${rhythmRing(p,22)}${TIERS[p.tier]?.label||""}${p.contactId?" · from Contacts":""}</div></div>
       <button class="btn small" id="dlgCloseTop" style="flex:none;background:var(--good)">Done</button></div>
     ${sec("Circle",`<div class="seg" style="margin:0">${Object.entries(TIERS).map(([k,t])=>`<button data-tier="${k}" class="${p.tier===k?"on":""}">${t.label}</button>`).join("")}</div>`)}
-    ${sec("Reach them",`${contactBtns(p)?`<div class="btngrid reachrow">${contactBtns(p)}</div>`:`<div class="hint" style="margin:0">No number yet — add ${esc(capName(p))} from Contacts to get one-tap Call, Text and WhatsApp buttons.</div>`}
+    ${sec("Reach them",`<button class="btn" id="pOpener" style="margin-bottom:10px">✨ Suggest a message</button>
+      ${contactBtns(p)?`<div class="btngrid reachrow">${contactBtns(p)}</div>`:`<div class="hint" style="margin:0">No number yet — add ${esc(capName(p))} from Contacts to get one-tap Call, Text and WhatsApp buttons.</div>`}
       ${p.contactId?`<div class="hint" style="margin-top:8px">Linked to Contacts — numbers, email, address, photo and birthday refresh automatically.</div>`:""}`)}
     ${sec("Address / area",`<div style="display:flex;gap:8px;align-items:flex-start">
       <textarea id="paddr" rows="${Math.min(5,Math.max(2,String(p.addr||"").split("\n").length))}" placeholder="Street\nTown\nPostcode" style="min-height:0;resize:none;line-height:1.4">${esc(p.addr||"")}</textarea>
@@ -1295,6 +1303,7 @@ function personSheet(pid){
     p.facts.splice(+b.dataset.fdel,1); saveDB(); dlg.close(); dlg.remove(); personSheet(pid);
   }));
   dlg.querySelector("#dlgCloseTop").addEventListener("click",()=>{ dlg.close(); dlg.remove(); });
+  dlg.querySelector("#pOpener").addEventListener("click",()=>{ if(!entitled()){ paywallSheet("Suggested messages are part of Samvar — start your free trial."); return; } openerSheet(p,{}); });
   dlg.querySelector("#paddrSave").addEventListener("click",async ()=>{
     const v=dlg.querySelector("#paddr").value.split(/\n|,\s*/).map(x=>x.trim()).filter(Boolean).join("\n");
     const st=dlg.querySelector("#paddrStatus");
@@ -1903,6 +1912,7 @@ applyTheme();
 
 /* ---------- navigation ---------- */
 function switchPage(p){
+  hideTip();
   document.querySelectorAll(".page").forEach(el=>el.classList.toggle("on",el.id==="page-"+p));
   document.querySelectorAll("nav.tabs button").forEach(b=>b.classList.toggle("on",b.dataset.p===p));
   window.scrollTo(0,0);
@@ -1914,7 +1924,7 @@ function renderAll(){ renderHome(); renderTriage(); renderPeople(); renderNetwor
 /* ---------- home-screen widget + Siri (native shell) ---------- */
 function widgetSnapshot(){
   const pick=todaysPick(nudges()), st=dailyStreak();
-  const why=!pick?"Everyone's in rhythm — enjoy it":pick.overdue?`${fmtAgo(pick.last)} since you spoke — past your ${pick.t.rhythm} rhythm`
+  const why=!pick?"Everyone's in rhythm — enjoy it":pick.never?"No conversation logged yet — say hello":pick.overdue?`${fmtAgo(pick.last)} since you spoke — past your ${pick.t.rhythm} rhythm`
     :`${Math.max(1,Math.round(pick.left))} day${Math.round(pick.left)===1?"":"s"} before they slip out of your ${pick.t.rhythm} rhythm`;
   return {name:pick?pick.p.name:null, initials:pick?initials(pick.p.name):null, why, streak:st.streak, score:connectionScore(Date.now()), target:targetScore(), updated:Date.now()};
 }
