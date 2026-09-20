@@ -170,3 +170,9 @@ dialog.mapdlg .mapx{top:calc(env(safe-area-inset-top) + 16px);right:16px;z-index
 .demo{opacity:.85}
 .demo .person{pointer-events:none}
 .rring{flex:none}
+
+.infobtn{flex:none;width:30px;height:30px;border-radius:50%;border:1.5px solid var(--ink-2);background:transparent;color:var(--ink-2);font:italic 700 15px Georgia,serif;line-height:27px;text-align:center;padding:0;cursor:pointer}
+
+header.app h1{white-space:nowrap}
+header.app .brand{flex-wrap:nowrap;align-items:baseline}
+header.app .brand .tag{flex:1;min-width:0;white-space:normal;line-height:1.2}

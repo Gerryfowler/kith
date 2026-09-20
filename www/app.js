@@ -951,11 +951,12 @@ async function aiOpeners(p,opts){
   const brief={name:p.name, tier:TIERS[p.tier].label,
     last:xs[0]?fmtAgo(xs[0].ts)+" — "+(xs[0].note||DEPTHS[xs[0].depth-1].label):"never logged",
     recent:xs.slice(1).map(x=>`${fmtAgo(x.ts)}: ${x.note||DEPTHS[x.depth-1].label}`).join("; ")||"none",
-    facts:(p.facts||[]).map(f=>f.f).join("; ")||"nothing specific", intent, town:townFromAddr(p.addr)||undefined};
+    facts:(p.facts||[]).map(f=>f.f).join("; ")||"nothing specific", intent, town:townFromAddr(p.addr)||undefined,
+    work:[p.role,p.company].filter(Boolean).join(" at ")||undefined};
   let arr;
   if(getApiKey()){
     const out=await claudeCall(OPENER_SYSTEM,
-      `Friend: ${brief.name} (${brief.tier}).\nLast contact: ${brief.last}.\nRecent: ${brief.recent}.\nThings I know about them: ${brief.facts}.\n${brief.intent}`, 600);
+      `Friend: ${brief.name} (${brief.tier}).${brief.work?` Work: ${brief.work}.`:""}\nLast contact: ${brief.last}.\nRecent: ${brief.recent}.\nThings I know about them: ${brief.facts}.\n${brief.intent}`, 600);
     const m=out.match(/\[[\s\S]*\]/); if(!m) throw new Error("Unexpected reply");
     arr=JSON.parse(m[0]);
   } else arr=await samvarAI("/v1/openers",brief);
@@ -1059,6 +1060,9 @@ async function syncContacts(){
       if(c.tel!==p.tel){ upd.tel=c.tel; upd.telIsMobile=c.telIsMobile; }
       if(JSON.stringify(c.tels||null)!==JSON.stringify(p.tels||null)) upd.tels=c.tels;
       if(c.email!==p.email) upd.email=c.email;
+      if(c.company!==p.company) upd.company=c.company;
+      if(c.role!==p.role) upd.role=c.role;
+      if(JSON.stringify(c.urls||null)!==JSON.stringify(p.urls||null)) upd.urls=c.urls;
       if(c.addr!==p.addr){ upd.addr=c.addr; upd.loc=undefined; }
       if(Object.keys(upd).length){ Object.assign(p,upd); changed=true; }
       if(c.birthday && !birthdayOf(p)){ p.facts=p.facts||[]; p.facts.push({f:"birthday "+c.birthday,kind:"date",ts:Date.now()}); changed=true; }
@@ -1271,7 +1275,9 @@ function personSheet(pid){
       <div class="avwrap"><div style="transform:scale(1.5);transform-origin:left center">${av(p.name,p.photo)}</div>
         <button class="avedit" id="pphoto" title="${p.photo?"Change photo":"Add photo"}" aria-label="Edit photo">✎</button></div>
       <div style="min-width:0;flex:1"><h2 style="font-size:18px;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(p.name)}</h2>
-        <div class="meta" style="display:flex;align-items:center;gap:6px">${rhythmRing(p,22)}${TIERS[p.tier]?.label||""}${p.contactId?" · from Contacts":""}</div></div>
+        <div class="meta" style="display:flex;align-items:center;gap:6px">${rhythmRing(p,22)}${TIERS[p.tier]?.label||""}${p.contactId?" · from Contacts":""}</div>
+        ${(p.company||p.role)?`<div class="meta">💼 ${esc([p.role,p.company].filter(Boolean).join(" at "))}</div>`:""}
+        ${(p.urls||[]).length?`<div class="meta">${p.urls.slice(0,3).map(u=>`<a href="${esc(u)}" target="_blank" rel="noopener" style="color:var(--accent)">${esc(u.replace(/^https?:\/\/(www\.)?/,"").split("/")[0])}</a>`).join(" · ")}</div>`:""}</div>
       <button class="btn small" id="dlgCloseTop" style="flex:none;background:var(--good)">Done</button></div>
     ${sec("Circle",`<div class="seg" style="margin:0">${Object.entries(TIERS).map(([k,t])=>`<button data-tier="${k}" class="${p.tier===k?"on":""}">${t.label}</button>`).join("")}</div>`)}
     ${sec("Reach them",`<button class="btn" id="pOpener" style="margin-bottom:10px">✨ Suggest a message</button>
@@ -1339,7 +1345,7 @@ function askTier(name, cb){
   const dlg=document.createElement("dialog");
   dlg.innerHTML=`<h2 style="font-size:17px">Which circle is ${esc(name)} in?</h2>
     <div class="seg" style="margin-top:12px">${Object.entries(TIERS).filter(([k])=>k!=="notnow").map(([k,t])=>`<button data-tier="${k}">${t.label}</button>`).join("")}</div>
-    <p class="hint">Inner = your closest few, weekly · Close = friends you’re building, monthly · Friendly = don’t lose touch, quarterly.</p>`;
+    <p class="hint">Inner ≈5, weekly · Close ≈15, monthly · Friendly ≈50, quarterly.</p>`;
   document.body.appendChild(dlg); dlg.showModal();
   dlg.querySelectorAll("button").forEach(b=>b.addEventListener("click",()=>{ dlg.close(); dlg.remove(); cb(b.dataset.tier); }));
 }
@@ -1537,7 +1543,7 @@ async function contactsSheet(){
       prog.textContent=`Adding ${i+1} of ${ids.length}…`;
       const facts=c.birthday?[{f:"birthday "+c.birthday,kind:"date",ts:Date.now()}]:[];
       let photo; try{ const b64=await n.contactPhoto(c.contactId); if(b64) photo=await storePhoto(b64); }catch(e){}
-      const p={id:uid(),name:c.name,tier:pick[c.contactId],aliases:[],added:Date.now(),contactId:c.contactId,tel:c.tel,tels:c.tels,telIsMobile:c.telIsMobile,addr:c.addr,email:c.email,facts,photo};
+      const p={id:uid(),name:c.name,tier:pick[c.contactId],aliases:[],added:Date.now(),contactId:c.contactId,tel:c.tel,tels:c.tels,telIsMobile:c.telIsMobile,addr:c.addr,email:c.email,company:c.company,role:c.role,urls:c.urls,facts,photo};
       DB.people.push(p); added.push(p);
     }
     saveDB(); renderAll(); n.haptic("success"); dlg.close(); dlg.remove();
@@ -1941,22 +1947,63 @@ function applyPendingIntent(it){
 switchPage("home");
 
 /* ---------- first-run welcome ---------- */
-function showWelcome(){
-  if(DB.settings.welcomed || DB.people.length || DB.interactions.length) return;
-  const dlg=document.createElement("dialog");
-  dlg.innerHTML=`<div style="text-align:center;padding:6px 0 2px;font-size:40px">🌱</div>
-    <h2 style="font-size:22px;text-align:center;letter-spacing:-.02em">Build your friendships like your fitness</h2>
-    <p class="hint" style="text-align:center;margin:4px 0 14px;font-size:14px">Most of us don’t lose friends on purpose — we just go quiet. Samvar makes sure you don’t.</p>
-    <div class="factline" style="font-size:14px;margin-top:8px"><span class="fk">◎</span><span>Put the people who matter in <b>circles</b>, each with its own rhythm.</span></div>
-    <div class="factline" style="font-size:14px"><span class="fk">🎙</span><span>After you see someone, <b>just say what happened</b>. Samvar remembers the details.</span></div>
-    <div class="factline" style="font-size:14px"><span class="fk">☀️</span><span>Each morning, a few <b>nudges</b> on who to reach out to — with the first line drafted.</span></div>
-    <p class="hint" style="text-align:center;margin:12px 0 10px">Free to start — add ${FREE_PEOPLE} people and log ${FREE_LOGS} conversations, then a 7-day free trial. Everything stays on your phone.</p>
-    <button class="btn" id="wGo">Add my people</button>
-    <button class="btn ghost small" id="wImport" style="width:100%;margin-top:8px">I have a backup file</button>`;
-  document.body.appendChild(dlg); dlg.showModal();
-  const done=()=>{ DB.settings.welcomed=true; saveDB(); dlg.close(); dlg.remove(); };
-  dlg.querySelector("#wGo").addEventListener("click",()=>{ done(); switchPage("people");
-    const c=document.getElementById("pickContacts"); if(c&&c.style.display!=="none") c.click(); else document.getElementById("newPersonName").focus(); });
-  dlg.querySelector("#wImport").addEventListener("click",()=>{ done(); document.getElementById("importFile").click(); });
+const CIRCLE_GUIDE=[
+  {k:"inner", n:"≈5", who:"the people you'd drop everything for", rhythm:"every week", remind:"a fortnight"},
+  {k:"invest", n:"≈15", who:"good friends you want to keep building", rhythm:"every month", remind:"a month"},
+  {k:"warm", n:"≈50", who:"people you'd hate to lose touch with", rhythm:"every quarter", remind:"three months"}
+];
+function circlesHtml(){
+  return CIRCLE_GUIDE.map(c=>`<div class="factline" style="font-size:14px;align-items:center"><span class="fk"><i style="display:inline-block;width:12px;height:12px;border-radius:50%;background:var(--ring${CIRCLE_GUIDE.indexOf(c)+1})"></i></span>
+    <span><b>${TIERS[c.k].label}</b> · ${c.n} people · ${c.who}. Aim to talk <b>${c.rhythm}</b>; Samvar nudges you once it's been ${c.remind}.</span></div>`).join("");
 }
-showWelcome();
+function circlesInfoSheet(){
+  const dlg=document.createElement("dialog");
+  dlg.innerHTML=`<h2 style="font-size:18px;margin-bottom:4px">Your circles</h2>
+    <p class="hint" style="margin:0 0 10px">Three circles, three rhythms. Fill them from Contacts and Samvar keeps the rhythm for you.</p>
+    ${circlesHtml()}
+    <p class="hint" style="margin-top:10px">Someone only appears in “Next up” once they're in the last stretch of their rhythm, or if you've never spoken. Every conversation you log counts the same, whoever reached out.</p>
+    <div style="display:flex;gap:8px;margin-top:12px"><button class="btn small" id="ciDone">Got it</button><button class="btn ghost small" id="ciReplay">Replay the intro</button></div>`;
+  document.body.appendChild(dlg); dlg.showModal();
+  dlg.querySelector("#ciDone").addEventListener("click",()=>{ dlg.close(); dlg.remove(); });
+  dlg.querySelector("#ciReplay").addEventListener("click",()=>{ dlg.close(); dlg.remove(); showIntro(true); });
+}
+document.getElementById("infoBtn")?.addEventListener("click",circlesInfoSheet);
+
+// First-open walkthrough: circles → logging → suggested messages → start.
+function showIntro(force){
+  if(!force && (DB.settings.welcomed || DB.people.length || DB.interactions.length)) return;
+  const steps=[
+    {title:"Build your friendships like your fitness", body:`<p class="hint" style="margin:0 0 10px;font-size:14px">Most of us don’t lose friends on purpose — we just go quiet. Samvar keeps a rhythm going with the people who matter.</p>
+      <p class="hint" style="margin:0 0 6px"><b>Step 1 — put your people in circles.</b> Tap <b>People → Add from Contacts</b> and flag each person into a circle:</p>${circlesHtml()}`},
+    {title:"Just say what happened", body:`<p class="hint" style="margin:0 0 10px;font-size:14px">After you see someone, open <b>Log</b> and dictate or type a line. Samvar works out who, how, and what's worth remembering.</p>
+      <div class="card" style="padding:10px 12px;margin-bottom:8px"><p class="hint" style="margin:0;font-style:italic">“Long lunch with Kate, she's moving to Bristol in March and Iris starts school in September.”</p></div>
+      <div class="card" style="padding:10px 12px"><div class="meta"><span class="badge" style="font-size:10px;padding:1px 6px;margin-right:4px">✨ Claude</span>Quality time · In person · today</div>
+        <div class="meta" style="color:var(--ink);margin-top:4px">Long lunch, talked about her move to Bristol</div>
+        <div class="factline" style="font-size:13px;margin-top:6px"><span class="fk">🏠</span><span>Kate — moving to Bristol in March</span></div>
+        <div class="factline" style="font-size:13px"><span class="fk">👨‍👩‍👧</span><span>Kate — daughter Iris starts school in September</span></div>
+        <div class="factline" style="font-size:13px"><span class="fk">📅</span><span>Follow-up: ask how the move went</span></div></div>`},
+    {title:"The first line, written for you", body:`<p class="hint" style="margin:0 0 10px;font-size:14px">When it's time to reach out, tap <b>✨ Suggest a message</b>. Samvar drafts three openers using everything it knows:</p>
+      <div class="factline" style="font-size:14px"><span class="fk">🗂</span><span>Your past conversations and the facts filed from them.</span></div>
+      <div class="factline" style="font-size:14px"><span class="fk">💼</span><span>Where they work, if it's in their contact card.</span></div>
+      <div class="factline" style="font-size:14px"><span class="fk">📍</span><span>Their <b>address</b> — so it can mention the weather or something happening in their town this week. That's why addresses matter.</span></div>
+      <div class="card" style="padding:10px 12px;margin-top:8px"><p class="hint" style="margin:0;font-style:italic">“How's the Bristol move going — drowning in boxes yet? Hope you're surviving the heat down there this week!”</p></div>`},
+    {title:"Ready?", body:`<p class="hint" style="margin:0 0 10px;font-size:14px">Every morning Samvar names one person to reach out to, with the buttons to do it. Log it and your streak grows.</p>
+      <p class="hint" style="margin:0 0 10px">Free to start — add ${FREE_PEOPLE} people and log ${FREE_LOGS} conversations, then a 7-day free trial. Everything stays on your phone.</p>`}
+  ];
+  let i=0; const dlg=document.createElement("dialog");
+  const render=()=>{ const st=steps[i], last=i===steps.length-1;
+    dlg.innerHTML=`<div class="hint" style="margin-bottom:6px">${steps.map((_,j)=>`<span style="display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;background:${j===i?"var(--accent)":"var(--ring)"}"></span>`).join("")}</div>
+      <h2 style="font-size:20px;letter-spacing:-.02em;margin-bottom:8px">${st.title}</h2>${st.body}
+      <div style="display:flex;gap:8px;margin-top:14px">${last?`<button class="btn" id="wGo" style="flex:1">Add my people</button>`:`<button class="btn" id="wNext" style="flex:1">Next</button>`}${i?`<button class="btn ghost small" id="wBack">Back</button>`:`<button class="btn ghost small" id="wSkip">Skip</button>`}</div>
+      ${last?`<button class="btn ghost small" id="wImport" style="width:100%;margin-top:8px">I have a backup file</button>`:""}`;
+    const done=()=>{ DB.settings.welcomed=true; saveDB(); dlg.close(); dlg.remove(); };
+    dlg.querySelector("#wNext")?.addEventListener("click",()=>{ i++; render(); });
+    dlg.querySelector("#wBack")?.addEventListener("click",()=>{ i--; render(); });
+    dlg.querySelector("#wSkip")?.addEventListener("click",done);
+    dlg.querySelector("#wGo")?.addEventListener("click",()=>{ done(); switchPage("people");
+      const c=document.getElementById("pickContacts"); if(c&&c.style.display!=="none") c.click(); else document.getElementById("newPersonName").focus(); });
+    dlg.querySelector("#wImport")?.addEventListener("click",()=>{ done(); document.getElementById("importFile").click(); });
+  };
+  document.body.appendChild(dlg); render(); dlg.showModal();
+}
+showIntro(false);

@@ -49,6 +49,7 @@ const OpenersBody = z.object({
   name: z.string().max(80), tier: z.string().max(40), last: z.string().max(300),
   recent: z.string().max(600), facts: z.string().max(1500), intent: z.string().max(300),
   town: z.string().max(120).optional(),
+  work: z.string().max(160).optional(),
 });
 const LocalOut = z.object({ items: z.array(z.object({ text: z.string(), kind: z.enum(["weather", "event", "news", "sport"]) })) });
 
@@ -182,7 +183,7 @@ export default {
           model: env.MODEL,
           max_tokens: 1000,
           system: OPENER_SYSTEM + '\nWrap the array as {"openers": [...]}.',
-          messages: [{ role: "user", content: `Friend: ${d.name} (${d.tier}).\nLast contact: ${d.last}.\nRecent: ${d.recent}.\nThings I know about them: ${d.facts}.${local ? `\nWhere they are (${d.town}): ${local}` : ""}\n${d.intent}` }],
+          messages: [{ role: "user", content: `Friend: ${d.name} (${d.tier}).${d.work ? ` Work: ${d.work}.` : ""}\nLast contact: ${d.last}.\nRecent: ${d.recent}.\nThings I know about them: ${d.facts}.${local ? `\nWhere they are (${d.town}): ${local}` : ""}\n${d.intent}` }],
           output_config: { format: zodOutputFormat(OpenersOut), effort: "medium" },
         });
         if (res.stop_reason === "refusal") return json({ error: "refused" }, 422, meta);

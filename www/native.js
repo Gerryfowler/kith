@@ -46,7 +46,7 @@
       let perm=await Contacts.checkPermissions();
       if(perm.contacts!=="granted") perm=await Contacts.requestPermissions();
       if(perm.contacts!=="granted") return null;
-      const r=await Contacts.getContacts({projection:{name:true,phones:true,postalAddresses:true,emails:true,birthday:true}});
+      const r=await Contacts.getContacts({projection:{name:true,phones:true,postalAddresses:true,emails:true,birthday:true,organization:true,urls:true}});
       const MONTHS=["January","February","March","April","May","June","July","August","September","October","November","December"];
       return (r.contacts||[]).map(c=>{
         const name=c.name && (c.name.display || [c.name.given,c.name.family].filter(Boolean).join(" "));
@@ -63,7 +63,9 @@
         const email=c.emails && c.emails[0] && c.emails[0].address;
         const b=c.birthday;
         const birthday=(b && b.day && b.month) ? `${b.day} ${MONTHS[b.month-1]}` : undefined;
-        return {contactId:c.contactId, name, tel:tel||undefined, tels, telIsMobile:!!(main&&main.mobile), addr, email:email||undefined, birthday};
+        const org=c.organization||{}; const company=(org.company||"").trim()||undefined, role=[org.jobTitle,org.department].map(x=>String(x||"").trim()).filter(Boolean).join(", ")||undefined;
+        const urls=(c.urls||[]).map(u=>String((u&&u.url)||u||"").trim()).filter(Boolean);
+        return {contactId:c.contactId, name, tel:tel||undefined, tels, telIsMobile:!!(main&&main.mobile), addr, email:email||undefined, birthday, company, role, urls:urls.length?urls:undefined};
       }).filter(Boolean).sort((x,y)=>x.name.localeCompare(y.name));
     },
     async contactPhoto(contactId){
