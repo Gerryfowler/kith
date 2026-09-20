@@ -138,3 +138,9 @@ input[type=date],input[type=time]{-webkit-appearance:none;appearance:none;displa
 .reach{display:flex;flex-wrap:wrap;gap:6px}
 .reach .btn{padding:8px 10px;font-size:13px}
 .row{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+
+.psec{border-top:2px solid var(--ring);padding-top:12px;margin-top:14px}
+.tag{white-space:normal}
+
+.btngrid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:8px}
+.btngrid .btn,.btngrid a.btn{margin:0;padding:9px 3px;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center;display:block}

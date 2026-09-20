@@ -140,7 +140,7 @@
 
   if(StatusBar && StatusBar.setStyle) StatusBar.setStyle({style:document.documentElement.dataset.theme==="dark"?"DARK":"LIGHT"}).catch(()=>{});
   // Re-render and re-schedule on every foreground so notification text reflects today's nudges.
-  if(App && App.addListener) App.addListener("appStateChange",s=>{ if(s.isActive){ renderAll(); window.SamvarNative.scheduleNudges(); refreshCalendar(); } });
+  if(App && App.addListener) App.addListener("appStateChange",s=>{ if(s.isActive){ renderAll(); window.SamvarNative.scheduleNudges(); refreshCalendar(); syncContacts(); } });
   if(LocalNotifications && LocalNotifications.addListener) LocalNotifications.addListener("localNotificationActionPerformed",()=>switchPage("home"));
 
   window.SamvarNative.refreshEntitlement().then(e=>{
@@ -151,4 +151,5 @@
   window.SamvarNative.scheduleNudges();
   initNativeUI();
   refreshCalendar();
+  setTimeout(syncContacts, 1500);
 })();

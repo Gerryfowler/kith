@@ -2,7 +2,7 @@
 
 ## Identity
 - **App name** (30 max): `Samvar`
-- **Subtitle** (30 max): `Keep your people close`
+- **Subtitle** (30 max): `Build friendships like fitness`
 - **Bundle ID**: `app.samvar.ios` (change if you register a different domain)
 - **Primary category**: Lifestyle · **Secondary**: Productivity
 - **Age rating**: 4+ (no objectionable content; questionnaire all "No")

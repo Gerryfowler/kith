@@ -1,6 +1,6 @@
 "use strict";
 /* =====================================================================
-   Samvar (formerly Kith) — keep your people close
+   Samvar (formerly Kith) — build your friendships like your fitness
    All data local on the device.
 ===================================================================== */
 
@@ -41,7 +41,7 @@ const DEPTHS=[
   {n:1,label:"Quick catch-up",mult:2.5},
   {n:2,label:"Quality time",mult:5}
 ];
-const INITS={me:{label:"I did",mult:1.5},mutual:{label:"Planned",mult:1.2},them:{label:"They did",mult:1.0}};
+
 const DAY=86400000;
 const uid=()=>Math.random().toString(36).slice(2,10);
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
@@ -50,7 +50,7 @@ const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",
 const GROUP_DISC=[1,.74,.59,.49,.43,.38];
 function groupDiscount(n){ if(n<=0) return 1; return n<=6? GROUP_DISC[n-1] : Math.max(.30, .38-.02*(n-6)); }
 function interactionPoints(x){
-  const base=(CHANNELS[x.channel]?.base||3) * (DEPTHS[x.depth-1]?.mult||2) * (INITS[x.initiator]?.mult||1);
+  const base=(CHANNELS[x.channel]?.base||3) * (DEPTHS[x.depth-1]?.mult||2);
   return base * groupDiscount((x.personIds||[]).length||1);
 }
 function personBalance(p, asOf){
@@ -87,9 +87,8 @@ function windowStats(asOf, days){
   const from=asOf-days*DAY;
   const xs=DB.interactions.filter(x=>x.ts>from && x.ts<=asOf);
   const n=xs.length;
-  const initMe=xs.filter(x=>x.initiator==="me").length;
   const deepShare = n? xs.filter(x=>x.depth>=2).length/n : 0;
-  return {n, initRatio: n? initMe/n : 0, deepShare, xs};
+  return {n, deepShare, xs};
 }
 function connectionScore(asOf){
   const tracked=DB.people.filter(p=>p.tier!=="notnow");
@@ -104,7 +103,7 @@ function connectionScore(asOf){
   const coverage = covDen? covNum/covDen : 0;
   const s=windowStats(asOf,30);
   const volume = Math.min(1, s.n/20); // ~5 logged interactions/week = full marks
-  const raw = 100*(0.50*coverage + 0.20*s.deepShare + 0.15*s.initRatio + 0.15*volume);
+  const raw = 100*(0.55*coverage + 0.25*s.deepShare + 0.20*volume);
   return Math.round(raw);
 }
 function weeklySeries(weeks){
@@ -128,8 +127,6 @@ function findPeopleInText(text){
 const DEPTH_CUES=[
   {re:/(deep|meaningful|heart[- ]to[- ]heart|opened up|emotional|vulnerab|really connected|profound|proper|substantive|long (chat|talk|call|walk|lunch|dinner|evening)|good (long )?(chat|talk|conversation)|advice|talked (about|through)|discussed|career|worri|problem|dinner|lunch|weekend|day out|hours)/i, d:2}
 ];
-const INIT_ME=/\b(i (called|rang|phoned|messaged|texted|emailed|invited|organised|organized|arranged|reached out|suggested|set (it )?up)|my (idea|suggestion|invite)|i initiated)\b/i;
-const INIT_THEM=/\b((s?he|they) (called|rang|phoned|messaged|texted|emailed|invited|organised|organized|arranged|reached out|suggested|set (it )?up)|called me|rang me|texted me|messaged me|invited me|reached out to me|(his|her|their) (idea|suggestion|invite))\b/i;
 const CHAN_CUES=[
   {re:/\b(dinner|lunch|coffee|drinks|in person|met (up|with)|walk|breakfast|pub|party|came (over|round)|visit)\b/i, c:"inperson"},
   {re:/\b(facetime|zoom|video ?call|teams|meet)\b/i, c:"call"},
@@ -137,13 +134,12 @@ const CHAN_CUES=[
   {re:/\b(text|whatsapp|message|emailed|email|dm|voice note)\b/i, c:"message"}
 ];
 function parseSegment(seg){
-  let depth=1, channel="inperson", initiator="mutual";
+  let depth=1, channel="inperson";
   for(const c of DEPTH_CUES){ if(c.re.test(seg)){ depth=c.d; break; } }
   for(const c of CHAN_CUES){ if(c.re.test(seg)){ channel=c.c; break; } }
-  if(INIT_ME.test(seg)) initiator="me"; else if(INIT_THEM.test(seg)) initiator="them";
   let ts=Date.now();
   if(/\b(yesterday|last night)\b/i.test(seg)) ts-=DAY;
-  return {depth, channel, initiator, ts};
+  return {depth, channel, ts};
 }
 function parseNote(text){
   // split into sentences; group consecutive sentences by the people they mention
@@ -246,7 +242,6 @@ Return ONLY a JSON array, no prose. One object per distinct interaction (a note 
 Each object:
 {"people":[names matched EXACTLY from the known-people list],
  "new_people":[names mentioned but NOT in the known list],
- "initiator":"me"|"them"|"mutual",  // from the note-writer's perspective; "mutual" for planned/recurring/unclear
  "depth":1|2,  // 1=quick catch-up (a message, a short call, light banter, logistics); 2=quality time (a proper conversation or time spent together — a meal, a walk, an evening, real topics discussed)
  "channel":"inperson"|"call"|"message",  // video calls count as "call"
  "date":"YYYY-MM-DD",  // resolve 'yesterday', 'last night', 'this morning', weekday names, relative to today's date given
@@ -351,7 +346,6 @@ async function aiParse(text){
       kind:KIND_EMOJI[f.kind]?f.kind:"other"})).filter(f=>f.person&&f.fact);
     return {id:uid(), ai:true, note:o.summary||text.slice(0,120), personIds, pendingNames, facts,
       place:String(o.place||"").slice(0,80),
-      initiator:INITS[o.initiator]?o.initiator:"mutual",
       depth:Math.min(2,Math.max(1,+o.depth||1)),
       channel:o.channel==="video"?"call":(CHANNELS[o.channel]?o.channel:"inperson"), ts};
   });
@@ -373,24 +367,12 @@ function sparkline(el, series){
   const y=v=>H-P-(H-2*P)*((v-min)/((max-min)||1));
   const pts=series.map((d,i)=>`${x(i)},${y(d.v)}`).join(" ");
   const last=series[series.length-1];
-  el.innerHTML=`<svg viewBox="0 0 ${W} ${H}" width="100%" style="touch-action:none">
+  el.innerHTML=`<svg viewBox="0 0 ${W} ${H}" width="100%" style="touch-action:pan-y;pointer-events:none">
     <line x1="${P}" y1="${H-P}" x2="${W-P}" y2="${H-P}" stroke="var(--baseline)" stroke-width="1"/>
     <polyline points="${pts}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
     <circle cx="${x(series.length-1)}" cy="${y(last.v)}" r="3.5" fill="var(--accent)" stroke="var(--tint-lav)" stroke-width="2"/>
     <text x="${W-P}" y="10" text-anchor="end" font-size="10" fill="var(--muted)">12 wks</text>
   </svg>`;
-  const svg=el.querySelector("svg");
-  const handle=ev=>{
-    const t=ev.touches?ev.touches[0]:ev;
-    const rect=svg.getBoundingClientRect();
-    const i=Math.max(0,Math.min(series.length-1,Math.round((t.clientX-rect.left)/rect.width*(series.length-1))));
-    const d=series[i];
-    showTip(`<b>${d.v}</b> · ${new Date(d.t).toLocaleDateString(undefined,{day:"numeric",month:"short"})}`, t.clientX, rect.top);
-  };
-  svg.addEventListener("pointermove",handle);
-  svg.addEventListener("touchmove",handle,{passive:true});
-  svg.addEventListener("pointerleave",hideTip);
-  svg.addEventListener("touchend",hideTip);
 }
 
 function depthMixBar(el, legendEl){
@@ -471,8 +453,6 @@ function editInteraction(id){
     ${x.note?`<p class="hint" style="margin:0 0 8px">“${esc(x.note.slice(0,120))}”</p>`:""}
     <div class="fld"><label>Who</label><div class="chips" id="echips">${chips()}
       <span class="chip" style="background:transparent"><input type="text" id="eadd" placeholder="+ add name" style="border:none;background:none;width:90px;padding:2px;font-size:14px"></span></div></div>
-    <div class="fld"><label>Who initiated</label><div class="seg" data-eset="initiator">
-      ${Object.entries(INITS).map(([k,v])=>`<button data-v="${k}" class="${x.initiator===k?"on":""}">${v.label}</button>`).join("")}</div></div>
     <div class="fld"><label>Type</label><div class="seg" data-eset="depth">
       ${DEPTHS.map(v=>`<button data-v="${v.n}" class="${x.depth===v.n?"on":""}">${v.label}</button>`).join("")}</div></div>
     <div class="fld"><label>Channel</label><div class="seg" data-eset="channel">
@@ -489,7 +469,7 @@ function editInteraction(id){
       <button class="btn small" id="esave">Save changes</button>
       <button class="btn ghost small" id="ecancel">Cancel</button></div>`;
   document.body.appendChild(dlg); dlg.showModal();
-  const draft={personIds:[...x.personIds],initiator:x.initiator,depth:x.depth,channel:x.channel,ts:x.ts,place:x.place||"",loc:x.loc,photo:x.photo};
+  const draft={personIds:[...x.personIds],depth:x.depth,channel:x.channel,ts:x.ts,place:x.place||"",loc:x.loc,photo:x.photo};
   hydratePhotos(dlg);
   dlg.querySelector("#ephotoBtn").addEventListener("click",async ()=>{ const ref=await choosePhoto(); if(!ref) return;
     if(draft.photo&&draft.photo!==x.photo) removePhoto(draft.photo);
@@ -610,7 +590,7 @@ function contactLinks(p){
 }
 function contactBtns(p){
   const links=contactLinks(p); if(!links.length) return "";
-  return `<div class="reach">${links.map((l,i)=>`<a class="btn ${i?"ghost ":""}small" href="${l.href}"${l.ext?' target="_blank" rel="noopener"':""}>${l.label}</a>`).join("")}</div>`;
+  return links.map((l,i)=>`<a class="btn ${i?"ghost ":""}small" href="${l.href}"${l.ext?' target="_blank" rel="noopener"':""}>${l.label}</a>`).join("");
 }
 
 /* ---------- rendering ---------- */
@@ -733,7 +713,9 @@ function renderHome(){
     const names=x.personIds.map(id=>DB.people.find(p=>p.id===id)?.name||"(removed)").join(", ");
     return `<div class="person" data-edit="${x.id}" style="cursor:pointer">${x.photo?`<div class="avatar" data-photo="${esc(x.photo)}" style="border-radius:10px"></div>`:av(names)}
       <div><div class="nm">${esc(names||"(no one tagged)")}</div>
-      <div class="meta">${DEPTHS[x.depth-1].label} · ${CHANNELS[x.channel].label} · ${INITS[x.initiator].label} · ${fmtAgo(x.ts)}${x.place?` · 📍 ${esc(x.place)}`:""}</div></div>
+      <div class="meta">${x.ai?`<span class="badge" style="font-size:10px;padding:1px 6px;margin-right:4px">✨ Claude</span>`:""}${DEPTHS[x.depth-1].label} · ${CHANNELS[x.channel].label} · ${fmtAgo(x.ts)}${x.place?` · 📍 ${esc(x.place)}`:""}</div>
+      ${x.note?`<div class="meta" style="color:var(--ink);margin-top:2px">${esc(x.note.slice(0,110))}${x.note.length>110?"…":""}</div>`:""}
+      ${(x.facts||[]).length?`<div class="meta" style="margin-top:2px">💡 ${x.facts.slice(0,2).map(f=>esc(f.fact)).join(" · ")}</div>`:""}</div>
       <div class="spacer"></div><span class="badge">+${Math.round(interactionPoints(x))} smiles</span><button class="xdel" data-x="${x.id}">✕</button></div>`;
   }).join(""):`<div class="empty">Your logged interactions appear here.</div>`;
   rec.querySelectorAll("[data-edit]").forEach(row=>row.addEventListener("click",()=>editInteraction(row.dataset.edit)));
@@ -766,9 +748,6 @@ function nudges(){
   for(const u of suggestions()) out.push({kind:"overdue", key:"overdue:"+u.p.id, p:u.p, last:u.last, urgency:u.urgency});
   const core=DB.people.filter(p=>p.tier==="inner"||p.tier==="invest");
   const history=p=>DB.interactions.filter(x=>x.personIds.includes(p.id)).sort((a,b)=>b.ts-a.ts);
-  const yourTurn=core.find(p=>{ const xs=history(p); return xs.length>=2 && xs[0].initiator==="them" && xs[1].initiator==="them"; });
-  if(yourTurn) out.push({kind:"yourturn", key:"yourturn:"+yourTurn.id, p:yourTurn, urgency:0.9,
-    why:`${esc(capName(yourTurn))} reached out the last two times — your turn to initiate.`});
   const deepen=core.find(p=>{ const xs=history(p).slice(0,3); return xs.length===3 && xs.every(x=>x.depth<2); });
   if(deepen) out.push({kind:"deepen", key:"deepen:"+deepen.id, p:deepen, urgency:0.7,
     why:`Your last three chats with ${esc(capName(deepen))} were light. Make the next one count — ask about something that matters to them.`});
@@ -791,7 +770,7 @@ function nudges(){
   }
   return out.filter(n=>!dismissed(n.key)).sort((a,b)=>b.urgency-a.urgency);
 }
-const KIND_LABEL={yourturn:"Your turn",deepen:"Go deeper",promote:"Closer than you think",introduce:"Introduce"};
+const KIND_LABEL={deepen:"Go deeper",promote:"Closer than you think",introduce:"Introduce"};
 // The one person most likely to slip past their circle's rhythm next: soonest to cross the threshold,
 // or, if everyone is already past it, the most overdue. Ignores people snoozed or dismissed today.
 function todaysPick(nudgeList){
@@ -817,7 +796,7 @@ function pickBlock(n){
       <span class="status" style="color:${h.color}"><i style="background:${h.color}"></i>${h.label}</span></div>
       <div class="spacer"></div><span class="badge">${n.t.label}</span></div>
     <div class="why">${why}</div>${facts}
-    <div class="row" style="margin-top:8px">${contactBtns(p)}<button class="btn ${contactLinks(p).length?"ghost ":""}small" data-act="opener">✨ Opener</button>
+    <div class="btngrid">${contactBtns(p)}<button class="btn ${contactLinks(p).length?"ghost ":""}small" data-act="opener">✨ Opener</button>
       <button class="btn ghost small" data-act="log">✓ Log it</button><button class="btn ghost small" data-act="dismiss" data-days="1">Skip today</button></div>
   </div>`;
 }
@@ -835,7 +814,7 @@ function nudgeCard(n){
   const why=n.kind==="overdue"
     ?`Last contact <b>${n.last?fmtAgo(n.last):"never logged"}</b> — your rhythm for this circle is every ${t.cadence} days.`
     :n.why;
-  const facts=(["overdue","yourturn","deepen"].includes(n.kind) && (p.facts||[]).length)
+  const facts=(["overdue","deepen"].includes(n.kind) && (p.facts||[]).length)
     ?`<div class="why">💡 ${p.facts.slice(-2).map(f=>esc(f.f)).join(" · ")}</div>`:"";
   let row;
   if(n.kind==="promote") row=`<button class="btn small" data-act="promote" data-to="${n.to}">Move to ${TIERS[n.to].label}</button>
@@ -846,7 +825,7 @@ function nudgeCard(n){
       <button class="btn ghost small" data-act="log">✓ Log it</button>
       <button class="btn ghost small" data-act="${n.kind==="overdue"?"snooze":"dismiss"}" data-days="14">${n.kind==="overdue"?"Snooze":"Not now"}</button>`;
   return `<div class="sugg" data-pid="${p.id}" data-key="${n.key}" data-kind="${n.kind}"${n.q?` data-qid="${n.q.id}"`:""}>
-    ${head}<div class="why">${why}</div>${facts}<div class="row">${row}</div></div>`;
+    ${head}<div class="why">${why}</div>${facts}<div class="btngrid">${row}</div></div>`;
 }
 function bindNudgeButtons(root){
   root.querySelectorAll(".sugg").forEach(card=>{
@@ -906,7 +885,7 @@ function sendMessage(p,text){
   alert(`Copied — no phone number saved for ${capName(p)}, so paste it wherever you two chat.`);
 }
 function logMessageSent(p,text){
-  DB.interactions.push({id:uid(),ts:Date.now(),personIds:[p.id],initiator:"me",depth:1,channel:"message",note:text.slice(0,120),place:""});
+  DB.interactions.push({id:uid(),ts:Date.now(),personIds:[p.id],depth:1,channel:"message",note:text.slice(0,120),place:""});
   delete p.snoozeUntil; saveDB(); renderAll();
 }
 async function openerSheet(p,opts={}){
@@ -947,14 +926,14 @@ function renderReflection(){
   const el=document.getElementById("reflect");
   const ws=weekStart(Date.now());
   const xs=DB.interactions.filter(x=>x.ts>=ws && x.ts<ws+7*DAY);
-  const quality=xs.filter(x=>x.depth>=2), mine=xs.filter(x=>x.initiator==="me").length;
+  const quality=xs.filter(x=>x.depth>=2);
   const named=ids=>[...new Set(ids)].map(id=>DB.people.find(p=>p.id===id)).filter(Boolean);
   const qNames=named(quality.flatMap(x=>x.personIds)).slice(0,2).map(p=>capName(p));
   const dow=new Date().getDay(), early=dow>=1&&dow<=3;
   let line;
   if(!DB.people.length) line="Add a few people and Samvar will start noticing who you'd love to hear from.";
   else if(!xs.length) line=early?"Fresh week. One message today is all it takes to get it moving.":"A quiet week so far — that's fine. One small message changes it.";
-  else if(quality.length) line=`Quality time with ${qNames.join(" and ")} this week 💛${mine?` — and you started ${mine} of ${xs.length}.`:"."} Lovely. Keep it rolling:`;
+  else if(quality.length) line=`Quality time with ${qNames.join(" and ")} this week 💛 Lovely. Keep it rolling:`;
   else line=`${xs.length} catch-up${xs.length===1?"":"s"} so far this week — nice work. Next up:`;
   const pick=todaysPick(nudges());
   el.innerHTML=`<div class="card t-mint" style="padding-bottom:12px">
@@ -963,6 +942,50 @@ function renderReflection(){
     ${pick?pickBlock(pick):(DB.people.length?`<div class="why" style="margin-top:8px">Everyone's in rhythm right now — enjoy it.</div>`:"")}
   </div>`;
   bindNudgeButtons(el);
+}
+
+/* ---------- Contacts sync: people linked to a card refresh from it on every foreground ---------- */
+let syncingContacts=false;
+async function syncContacts(){
+  const n=window.SamvarNative; if(!n||!n.allContacts||syncingContacts) return;
+  const linked=DB.people.filter(p=>p.contactId); if(!linked.length) return;
+  syncingContacts=true;
+  try{
+    const list=await n.allContacts(); if(!list) return;
+    const byId=Object.fromEntries(list.map(c=>[c.contactId,c]));
+    let changed=false; const gone=[];
+    for(const p of linked){
+      const c=byId[p.contactId];
+      if(!c){ gone.push(p); continue; }
+      const upd={};
+      if(c.name && c.name!==p.name) upd.name=c.name;
+      if(c.tel!==p.tel){ upd.tel=c.tel; upd.telIsMobile=c.telIsMobile; }
+      if(JSON.stringify(c.tels||null)!==JSON.stringify(p.tels||null)) upd.tels=c.tels;
+      if(c.email!==p.email) upd.email=c.email;
+      if(c.addr!==p.addr){ upd.addr=c.addr; upd.loc=undefined; }
+      if(Object.keys(upd).length){ Object.assign(p,upd); changed=true; }
+      if(c.birthday && !birthdayOf(p)){ p.facts=p.facts||[]; p.facts.push({f:"birthday "+c.birthday,kind:"date",ts:Date.now()}); changed=true; }
+      if(!p.photo){ try{ const b64=await n.contactPhoto(c.contactId); if(b64){ p.photo=await storePhoto(b64); changed=true; } }catch(e){} }
+    }
+    if(changed){ saveDB(); renderAll(); }
+    for(const p of gone){ if(!dismissed("gone:"+p.id)) await askAboutDeletedContact(p); }
+  }catch(e){ console.warn("syncContacts",e); }
+  finally{ syncingContacts=false; }
+}
+// Their card vanished from Contacts. Keep = move to Not now (out of rings, score and nudges; history stays). Delete = remove everything.
+function askAboutDeletedContact(p){
+  return new Promise(res=>{
+    const dlg=document.createElement("dialog");
+    dlg.innerHTML=`<h2 style="font-size:17px;margin-bottom:6px">${esc(p.name)} was deleted from Contacts</h2>
+      <p class="hint" style="margin:0 0 12px">Delete their history in Samvar too? Keeping it moves them to “Not now”, so they no longer count in your circles, but their conversations and notes stay on their profile.</p>
+      <div style="display:flex;gap:8px"><button class="btn small" id="gKeep">Keep history</button><button class="btn danger small" id="gDel">Delete everything</button></div>`;
+    document.body.appendChild(dlg); dlg.showModal();
+    const done=()=>{ dlg.close(); dlg.remove(); saveDB(); renderAll(); res(); };
+    dlg.querySelector("#gKeep").addEventListener("click",()=>{ p.tier="notnow"; p.contactId=undefined; dismiss("gone:"+p.id,3650); done(); });
+    dlg.querySelector("#gDel").addEventListener("click",()=>{
+      removePhoto(p.photo); DB.interactions.forEach(x=>{ if(x.personIds.includes(p.id)) removePhoto(x.photo); });
+      DB.interactions=DB.interactions.filter(x=>!x.personIds.includes(p.id)); DB.people=DB.people.filter(x=>x.id!==p.id); done(); });
+  });
 }
 
 /* ---------- calendar: "you had lunch with Kate — log it?" ---------- */
@@ -999,7 +1022,7 @@ function renderCalendarSuggestions(){
   }).join(""):"";
   el.querySelectorAll("[data-callog]").forEach(b=>b.addEventListener("click",()=>{
     const {ev,people}=ms[+b.dataset.callog]; const mins=(ev.end-ev.start)/60000;
-    drafts.push({id:uid(), note:ev.title, personIds:people.map(p=>p.id), pendingNames:[], place:ev.location||"", depth:mins>=60?2:1, channel:"inperson", initiator:"mutual", ts:ev.start, cal:ev.id});
+    drafts.push({id:uid(), note:ev.title, personIds:people.map(p=>p.id), pendingNames:[], place:ev.location||"", depth:mins>=60?2:1, channel:"inperson", ts:ev.start, cal:ev.id});
     dismiss("cal:"+ev.id, 30); switchPage("log"); renderDrafts(); renderCalendarSuggestions();
     document.getElementById("drafts").scrollIntoView({behavior:"smooth"});
   }));
@@ -1014,7 +1037,6 @@ function nudgeText(){
   for(const n of nudges().slice(0,2)){
     if(n.kind==="overdue"){ const lab=healthOfP(n.p,Date.now()).label;
       parts.push(!n.last?`Still no contact with ${capName(n.p)}`:lab==="reconnect now"?`Reconnect with ${capName(n.p)} now — last ${fmtAgo(n.last)}`:`${capName(n.p)} is ${lab} — last ${fmtAgo(n.last)}`); }
-    else if(n.kind==="yourturn") parts.push(`Your turn to reach out to ${capName(n.p)}`);
     else if(n.kind==="deepen") parts.push(`Go deeper with ${capName(n.p)} this time`);
     else if(n.kind==="introduce") parts.push(`Get ${capName(n.p)} and ${capName(n.q)} together`);
   }
@@ -1031,7 +1053,6 @@ function nextNudgeTimes(count){
 }
 function renderInsights(){
   const s=windowStats(Date.now(),30);
-  document.getElementById("initVal").textContent=s.n?Math.round(100*s.initRatio)+"%":"–";
   document.getElementById("depthVal").textContent=s.n?Math.round(100*s.deepShare)+"%":"–";
   depthMixBar(document.getElementById("depthBar"), document.getElementById("depthLegend"));
 }
@@ -1100,38 +1121,35 @@ function personSheet(pid){
   const p=DB.people.find(x=>x.id===pid); if(!p) return;
   const xs=DB.interactions.filter(x=>x.personIds.includes(pid)).sort((a,b)=>b.ts-a.ts);
   const dlg=document.createElement("dialog");
-  dlg.innerHTML=`<div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
+  const sec=(title,body)=>`<div class="psec"><div class="sect" style="margin:0 0 8px">${title}</div>${body}</div>`;
+  dlg.innerHTML=`<div style="display:flex;align-items:center;gap:12px;margin-bottom:4px">
       <div style="transform:scale(1.5);transform-origin:left center">${av(p.name,p.photo)}</div>
       <div style="margin-left:14px"><h2 style="font-size:18px;margin:0">${esc(p.name)}</h2>
         <div style="display:flex;gap:6px;margin-top:6px"><button class="btn ghost small" id="pphoto">${p.photo?"Change photo":"Add photo"}</button>${p.photo?`<button class="btn ghost small" id="pphotoRm">Remove</button>`:""}</div></div></div>
-    <div class="fld"><label>Circle</label><div class="seg">${Object.entries(TIERS).map(([k,t])=>`<button data-tier="${k}" class="${p.tier===k?"on":""}">${t.label}</button>`).join("")}</div></div>
-    <div class="fld"><label>Phone</label><div style="display:flex;gap:8px;align-items:center">
-      <input type="tel" id="ptel" value="${esc(p.tel||"")}" placeholder="Mobile, e.g. +44 7…">
-      <button class="btn small" id="ptelSave">Save</button></div>
-      </div>
-    <div class="fld"><label>Ways to reach them</label>
-      ${contactBtns(p)||`<div class="hint">Add a number or a handle below to get one-tap buttons here and on suggestions.</div>`}
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">
+    ${sec("Circle",`<div class="seg" style="margin:0">${Object.entries(TIERS).map(([k,t])=>`<button data-tier="${k}" class="${p.tier===k?"on":""}">${t.label}</button>`).join("")}</div>`)}
+    ${sec("Reach them",`${contactBtns(p)?`<div class="btngrid">${contactBtns(p)}</div>`:`<div class="hint" style="margin:0 0 8px">Add a number or a handle to get one-tap buttons here and on suggestions.</div>`}
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:${contactBtns(p)?"10":"0"}px">
+        <input type="tel" id="ptel" value="${esc(p.tel||"")}" placeholder="Mobile number">
         <input type="email" id="pemail" value="${esc(p.email||"")}" placeholder="Email">
         <input type="text" id="psnap" value="${esc(p.snap||"")}" placeholder="Snapchat username" autocapitalize="none">
-        <input type="text" id="pinsta" value="${esc(p.insta||"")}" placeholder="Instagram username" autocapitalize="none">
-        <button class="btn small" id="phandlesSave">Save</button></div></div>
-    <div class="fld"><label>Address / area</label><div style="display:flex;gap:8px">
+        <input type="text" id="pinsta" value="${esc(p.insta||"")}" placeholder="Instagram username" autocapitalize="none"></div>
+      <button class="btn small" id="phandlesSave" style="margin-top:8px">Save details</button>
+      ${p.contactId?`<div class="hint" style="margin-top:6px">Linked to Contacts — number, email, address, photo and birthday refresh automatically.</div>`:""}`)}
+    ${sec("Address / area",`<div style="display:flex;gap:8px">
       <input type="text" id="paddr" value="${esc(p.addr||"")}" placeholder="e.g. Clapham SW4, or Zurich">
       <button class="btn small" id="paddrSave">Save</button></div>
-      <div class="hint" id="paddrStatus">${p.loc?"📍 on the map":(p.addr?"not mapped yet — run “Put contacts on the map” in the You tab":"powers place search and “near me”")}</div></div>
-    <div class="sect" style="margin-top:8px">Worth remembering</div>
-    <div id="factList">${(p.facts&&p.facts.length)?[...p.facts].reverse().map((f,i)=>
+      <div class="hint" id="paddrStatus">${p.loc?"📍 on the map":(p.addr?"not mapped yet — run “Put contacts on the map” in the You tab":"powers place search and “near me”")}</div>`)}
+    ${sec("Worth remembering",`<div id="factList">${(p.facts&&p.facts.length)?[...p.facts].reverse().map((f,i)=>
       `<div class="factline"><span class="fk">${KIND_EMOJI[f.kind]||"📝"}</span><span>${esc(f.f)}</span><button data-fdel="${p.facts.length-1-i}">✕</button></div>`).join("")
-      :`<div class="empty" style="padding:8px">Nothing yet — mention things in your notes (kids, plans, likes) and Claude files them here.</div>`}</div>
+      :`<div class="empty" style="padding:8px">Nothing yet — mention things in your notes (family, birthdays, big events) and Claude files them here.</div>`}</div>
     <div style="display:flex;gap:8px;margin-top:8px">
       <input type="text" id="factAdd" placeholder="Add something to remember…">
-      <button class="btn small" id="factAddBtn">Add</button></div>
-    <div class="sect" style="margin-top:12px">History</div>
-    ${xs.length?xs.slice(0,20).map(x=>`<div class="person" data-xedit="${x.id}" style="cursor:pointer">${x.photo?`<div class="avatar" data-photo="${esc(x.photo)}" style="border-radius:10px"></div>`:""}<div><div class="nm" style="font-size:14px">${DEPTHS[x.depth-1].label} · ${CHANNELS[x.channel].label}</div>
-      <div class="meta">${INITS[x.initiator].label} · ${fmtAgo(x.ts)}${x.place?` · 📍 ${esc(x.place)}`:""}${x.note?` — ${esc(x.note.slice(0,90))}`:""}</div></div>
+      <button class="btn small" id="factAddBtn">Add</button></div>`)}
+    ${sec("History",xs.length?xs.slice(0,20).map(x=>`<div class="person" data-xedit="${x.id}" style="cursor:pointer">${x.photo?`<div class="avatar" data-photo="${esc(x.photo)}" style="border-radius:10px"></div>`:""}<div><div class="nm" style="font-size:14px">${x.ai?`<span class="badge" style="font-size:10px;padding:1px 6px;margin-right:4px">✨ Claude</span>`:""}${DEPTHS[x.depth-1].label} · ${CHANNELS[x.channel].label} · ${fmtAgo(x.ts)}${x.place?` · 📍 ${esc(x.place)}`:""}</div>
+      ${x.note?`<div class="meta" style="color:var(--ink)">${esc(x.note.slice(0,110))}${x.note.length>110?"…":""}</div>`:""}
+      ${(x.facts||[]).length?`<div class="meta">💡 ${x.facts.slice(0,2).map(f=>esc(f.fact)).join(" · ")}</div>`:""}</div>
       <div class="spacer"></div><button class="xdel" data-xdel="${x.id}">✕</button></div>`).join("")
-      :`<div class="empty">No interactions logged yet.</div>`}
+      :`<div class="empty">No interactions logged yet.</div>`)}
     <button class="btn" id="dlgClose" style="width:100%;margin-top:14px;padding:14px;font-size:17px">Done</button>
     <div style="text-align:center;margin-top:10px"><button class="btn ghost small" id="dlgDel" style="color:var(--critical);font-size:12px;padding:4px 8px">Remove person</button></div>`;
   document.body.appendChild(dlg); dlg.showModal(); hydratePhotos(dlg);
@@ -1142,11 +1160,8 @@ function personSheet(pid){
     p.facts.splice(+b.dataset.fdel,1); saveDB(); dlg.close(); dlg.remove(); personSheet(pid);
   }));
   dlg.querySelector("#phandlesSave").addEventListener("click",()=>{
+    const tel=dlg.querySelector("#ptel").value.trim()||undefined; if(tel!==p.tel){ p.tel=tel; p.telIsMobile=undefined; }
     p.email=dlg.querySelector("#pemail").value.trim()||undefined; p.snap=dlg.querySelector("#psnap").value.trim()||undefined; p.insta=dlg.querySelector("#pinsta").value.trim()||undefined;
-    saveDB(); dlg.close(); dlg.remove(); personSheet(pid);
-  });
-  dlg.querySelector("#ptelSave").addEventListener("click",()=>{
-    p.tel=dlg.querySelector("#ptel").value.trim()||undefined;
     saveDB(); dlg.close(); dlg.remove(); personSheet(pid);
   });
   dlg.querySelector("#paddrSave").addEventListener("click",async ()=>{
@@ -1201,8 +1216,6 @@ function renderDrafts(){
       <p class="hint" style="margin:0 0 8px">${d.ai?`<span class="badge" style="margin-right:6px">Claude</span>`:""}“${esc(d.note.slice(0,140))}${d.note.length>140?"…":""}”</p>
       <div class="fld"><label>Who</label><div class="chips">${chips}
         <span class="chip" style="background:transparent"><input type="text" data-addperson="${di}" placeholder="+ add name" style="border:none;background:none;width:90px;padding:2px;font-size:14px"></span></div></div>
-      <div class="fld"><label>Who initiated</label><div class="seg" data-set="initiator" data-di="${di}">
-        ${Object.entries(INITS).map(([k,v])=>`<button data-v="${k}" class="${d.initiator===k?"on":""}">${v.label}</button>`).join("")}</div></div>
       <div class="fld"><label>Type</label><div class="seg" data-set="depth" data-di="${di}">
         ${DEPTHS.map(v=>`<button data-v="${v.n}" class="${d.depth===v.n?"on":""}">${v.label}</button>`).join("")}</div></div>
       <div class="fld"><label>Channel</label><div class="seg" data-set="channel" data-di="${di}">
@@ -1274,7 +1287,8 @@ function renderDrafts(){
     const d=drafts[+b.dataset.save];
     if((d.pendingNames||[]).length){ alert("Tap the highlighted name(s) to file them into a circle first."); return; }
     if(!d.personIds.length){ alert("Tag at least one person (type a name and press return)."); return; }
-    DB.interactions.push({id:uid(),ts:d.ts,personIds:d.personIds,initiator:d.initiator,depth:d.depth,channel:d.channel,note:d.note,place:d.place||"",loc:d.loc,photo:d.photo});
+    DB.interactions.push({id:uid(),ts:d.ts,personIds:d.personIds,depth:d.depth,channel:d.channel,note:d.note,place:d.place||"",loc:d.loc,photo:d.photo,
+      ai:!!d.ai, facts:(d.facts||[]).map(f=>({person:f.person,fact:f.fact,kind:f.kind}))});
     // attach remembered facts to their people (fuzzy names; fall back to the tagged person)
     for(const f of (d.facts||[])){
       let p=DB.people.find(x=>x.name.toLowerCase()===f.person.toLowerCase()
@@ -1382,7 +1396,7 @@ async function contactsSheet(){
       prog.textContent=`Adding ${i+1} of ${ids.length}…`;
       const facts=c.birthday?[{f:"birthday "+c.birthday,kind:"date",ts:Date.now()}]:[];
       let photo; try{ const b64=await n.contactPhoto(c.contactId); if(b64) photo=await storePhoto(b64); }catch(e){}
-      const p={id:uid(),name:c.name,tier:pick[c.contactId],aliases:[],added:Date.now(),tel:c.tel,tels:c.tels,telIsMobile:c.telIsMobile,addr:c.addr,email:c.email,facts,photo};
+      const p={id:uid(),name:c.name,tier:pick[c.contactId],aliases:[],added:Date.now(),contactId:c.contactId,tel:c.tel,tels:c.tels,telIsMobile:c.telIsMobile,addr:c.addr,email:c.email,facts,photo};
       DB.people.push(p); added.push(p);
     }
     saveDB(); renderAll(); n.haptic("success"); dlg.close(); dlg.remove();
@@ -1751,7 +1765,7 @@ function showWelcome(){
   if(DB.settings.welcomed || DB.people.length || DB.interactions.length) return;
   const dlg=document.createElement("dialog");
   dlg.innerHTML=`<div style="text-align:center;padding:6px 0 2px;font-size:40px">🌱</div>
-    <h2 style="font-size:22px;text-align:center;letter-spacing:-.02em">Keep your people close</h2>
+    <h2 style="font-size:22px;text-align:center;letter-spacing:-.02em">Build your friendships like your fitness</h2>
     <p class="hint" style="text-align:center;margin:4px 0 14px;font-size:14px">Most of us don’t lose friends on purpose — we just go quiet. Samvar makes sure you don’t.</p>
     <div class="factline" style="font-size:14px;margin-top:8px"><span class="fk">◎</span><span>Put the people who matter in <b>circles</b>, each with its own rhythm.</span></div>
     <div class="factline" style="font-size:14px"><span class="fk">🎙</span><span>After you see someone, <b>just say what happened</b>. Samvar remembers the details.</span></div>

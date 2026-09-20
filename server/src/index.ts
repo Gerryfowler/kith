@@ -26,7 +26,6 @@ const CORS = {
 const Interaction = z.object({
   people: z.array(z.string()),
   new_people: z.array(z.string()),
-  initiator: z.enum(["me", "them", "mutual"]),
   depth: z.number().int(),
   channel: z.enum(["inperson", "call", "message"]),
   date: z.string(),
