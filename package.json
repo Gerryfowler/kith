@@ -21,6 +21,7 @@
     "@capacitor/share": "^8.0.0",
     "@capacitor/splash-screen": "^8.0.0",
     "@capacitor/status-bar": "^8.0.0",
+    "@ebarooni/capacitor-calendar": "^8.6.0",
     "@revenuecat/purchases-capacitor": "^13.6.0"
   },
   "devDependencies": {

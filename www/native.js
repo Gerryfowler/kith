@@ -7,8 +7,9 @@
   // Capacitor.Plugins and has no registerPlugin. Fall back to registerPlugin only if a runtime provides it.
   const reg=n=>{ try{ if(Cap.Plugins&&Cap.Plugins[n]) return Cap.Plugins[n]; return Cap.registerPlugin?Cap.registerPlugin(n):null; }catch(e){ return null; } };
   const LocalNotifications=reg("LocalNotifications"), Contacts=reg("Contacts"), Purchases=reg("Purchases"),
-        Haptics=reg("Haptics"), Share=reg("Share"), App=reg("App"), StatusBar=reg("StatusBar"), Filesystem=reg("Filesystem"), Camera=reg("Camera");
+        Haptics=reg("Haptics"), Share=reg("Share"), App=reg("App"), StatusBar=reg("StatusBar"), Filesystem=reg("Filesystem"), Camera=reg("Camera"), Calendar=reg("CapacitorCalendar");
 
+  function opts_askedCalendar(){ try{ return !!(DB.settings.welcomed && DB.people.length); }catch(e){ return false; } }
   const RC_IOS_KEY="appl_HRQlVTfaAsgwxnwRfnwRfEFtsaJ";
   let rcReady=false;
   async function rc(){
@@ -80,6 +81,16 @@
       const r=await Filesystem.getUri({path, directory:"DATA"});
       const url=Cap.convertFileSrc(r.uri); this._photoUrls[path]=url; return url;
     },
+    // Read-only calendar access; events in [from,to] as {id,title,start,end,isAllDay,location,attendees:[names]}.
+    async calendarEvents(from, to){
+      if(!Calendar) return [];
+      let perm=await Calendar.checkPermission({scope:"readCalendar"});
+      if(perm.result!=="granted"){ if(!opts_askedCalendar()){ return []; } perm=await Calendar.requestPermission({scope:"readCalendar"}); }
+      if(perm.result!=="granted") return [];
+      const r=await Calendar.listEventsInRange({from, to});
+      return (r.result||[]).map(e=>({id:e.id, title:e.title||"", start:e.startDate, end:e.endDate, isAllDay:!!e.isAllDay, location:e.location||"",
+        attendees:(e.attendees||[]).map(a=>a.name||"").filter(Boolean)}));
+    },
     // source: "photos" | "camera". Returns base64 JPEG downscaled to 640px, or null if cancelled.
     async pickPhoto(source){
       if(!Camera) return null;
@@ -124,7 +135,7 @@
 
   if(StatusBar && StatusBar.setStyle) StatusBar.setStyle({style:document.documentElement.dataset.theme==="dark"?"DARK":"LIGHT"}).catch(()=>{});
   // Re-render and re-schedule on every foreground so notification text reflects today's nudges.
-  if(App && App.addListener) App.addListener("appStateChange",s=>{ if(s.isActive){ renderAll(); window.SamvarNative.scheduleNudges(); } });
+  if(App && App.addListener) App.addListener("appStateChange",s=>{ if(s.isActive){ renderAll(); window.SamvarNative.scheduleNudges(); refreshCalendar(); } });
   if(LocalNotifications && LocalNotifications.addListener) LocalNotifications.addListener("localNotificationActionPerformed",()=>switchPage("home"));
 
   window.SamvarNative.refreshEntitlement().then(e=>{
@@ -134,4 +145,5 @@
   }).catch(()=>{});
   window.SamvarNative.scheduleNudges();
   initNativeUI();
+  refreshCalendar();
 })();

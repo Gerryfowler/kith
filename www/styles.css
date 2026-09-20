@@ -134,3 +134,7 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
 input[type=date],input[type=time]{-webkit-appearance:none;appearance:none;display:block}
 
 .avatar[data-photo]{color:transparent}
+
+.reach{display:flex;flex-wrap:wrap;gap:6px}
+.reach .btn{padding:8px 10px;font-size:13px}
+.row{display:flex;flex-wrap:wrap;gap:6px;align-items:center}

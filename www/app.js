@@ -30,9 +30,9 @@ let DB=loadDB();
 
 /* ---------- model constants ---------- */
 const TIERS={
-  inner:{label:"Inner",    cadence:7,  halflife:14, weight:1.2},   // ~weekly
-  invest:{label:"Close",    cadence:21, halflife:30, weight:1.5},   // every 2-4 weeks
-  warm:{label:"Friendly",  cadence:60, halflife:75, weight:0.7},   // every 1-3 months
+  inner:{label:"Inner",    cadence:7,  halflife:14,  weight:1.2, rhythm:"weekly"},     // every week
+  invest:{label:"Close",    cadence:30, halflife:40,  weight:1.5, rhythm:"monthly"},    // every month
+  warm:{label:"Friendly",  cadence:90, halflife:110, weight:0.7, rhythm:"quarterly"},  // every quarter
   notnow:{label:"Not now",     cadence:0,  halflife:0,  weight:0}
 };
 const CHANNELS={inperson:{label:"In person",base:10},call:{label:"Call",base:5},message:{label:"Message",base:2}};
@@ -596,10 +596,20 @@ function saveFile(name, text, mime){
 
 /* ---------- one-tap contact actions ---------- */
 function telDigits(t){ return String(t||"").replace(/[^\d+]/g,""); }
-function contactBtns(p, small){
-  const t=telDigits(p.tel); if(!t) return "";
-  const wa=t.startsWith("+")?`<a class="btn ghost small" href="https://wa.me/${t.slice(1)}" target="_blank" rel="noopener">🟢</a>`:"";
-  return `<a class="btn small" href="tel:${t}">📞</a><a class="btn ghost small" href="sms:${t}">💬</a>${wa}`;
+// One-tap ways to reach someone. External https links open the app via target=_blank (Capacitor hands them to iOS).
+function contactLinks(p){
+  const t=telDigits(p.tel), out=[];
+  if(t) out.push({k:"call", label:"📞 Call", href:`tel:${t}`});
+  if(t) out.push({k:"text", label:"💬 Text", href:`sms:${t}`});
+  if(p.email) out.push({k:"email", label:"✉️ Email", href:`mailto:${p.email}`});
+  if(t){ const d=t.replace(/^\+/,"").replace(/^0/, ""); out.push({k:"wa", label:"🟢 WhatsApp", href:`https://wa.me/${t.startsWith("+")?t.slice(1):d}`, ext:true}); }
+  if(p.snap) out.push({k:"snap", label:"👻 Snap", href:`https://www.snapchat.com/add/${encodeURIComponent(p.snap.replace(/^@/,""))}`, ext:true});
+  if(p.insta) out.push({k:"insta", label:"📸 Insta", href:`https://ig.me/m/${encodeURIComponent(p.insta.replace(/^@/,""))}`, ext:true});
+  return out;
+}
+function contactBtns(p){
+  const links=contactLinks(p); if(!links.length) return "";
+  return `<div class="reach">${links.map((l,i)=>`<a class="btn ${i?"ghost ":""}small" href="${l.href}"${l.ext?' target="_blank" rel="noopener"':""}>${l.label}</a>`).join("")}</div>`;
 }
 
 /* ---------- rendering ---------- */
@@ -705,12 +715,13 @@ function renderHome(){
   renderRings();
 
   renderReflection();
-  // reach out today: top 3 nudges by urgency, expandable to all
+  // reach out today: today's pick first, then the top 3 nudges by urgency, expandable to all
   const att=document.getElementById("homeAttention"), more=document.getElementById("suggMore");
   const list=nudges();
   const shown=showAllSugg?list:list.slice(0,3);
-  att.innerHTML=shown.length?shown.map(nudgeCard).join(""):
-    `<div class="card empty">Everyone’s in rhythm — nice. Nudges appear here when someone has gone quiet longer than their circle’s rhythm.</div>`;
+  const pick=todaysPick(list);
+  att.innerHTML=(pick?pickCard(pick):"")+(shown.length?shown.filter(n=>!pick||n.p!==pick.p||n.kind!=="overdue").map(nudgeCard).join(""):
+    (pick?"":`<div class="card empty">Everyone’s in rhythm — nice. Nudges appear here when someone has gone quiet longer than their circle’s rhythm.</div>`));
   bindNudgeButtons(att);
   more.innerHTML=list.length>3?`<button class="btn ghost small" id="suggToggle" style="margin:0 0 12px">${showAllSugg?"Show fewer":`See all ${list.length}`}</button>`:"";
   more.querySelector("#suggToggle")?.addEventListener("click",()=>{ showAllSugg=!showAllSugg; renderHome(); });
@@ -763,7 +774,7 @@ function nudges(){
   for(const p of DB.people){
     const n=history(p).filter(x=>now-x.ts<=60*DAY).length;
     if(p.tier==="warm" && n>=3) out.push({kind:"promote", key:"promote:"+p.id, p, to:"invest", urgency:0.6,
-      why:`You've seen ${esc(capName(p))} ${n} times in two months — more than a Friendly rhythm. Move to Close?`});
+      why:`You've seen ${esc(capName(p))} ${n} times in three months — more than a Friendly rhythm. Move to Close?`});
     else if(p.tier==="invest" && n>=6) out.push({kind:"promote", key:"promote:"+p.id, p, to:"inner", urgency:0.6,
       why:`${esc(capName(p))} is in your life almost weekly. Move to Inner?`});
   }
@@ -780,6 +791,36 @@ function nudges(){
   return out.filter(n=>!dismissed(n.key)).sort((a,b)=>b.urgency-a.urgency);
 }
 const KIND_LABEL={yourturn:"Your turn",deepen:"Go deeper",promote:"Closer than you think",introduce:"Introduce"};
+// The one person most likely to slip past their circle's rhythm next: soonest to cross the threshold,
+// or, if everyone is already past it, the most overdue. Ignores people snoozed or dismissed today.
+function todaysPick(nudgeList){
+  const now=Date.now(); let best=null;
+  for(const p of DB.people){
+    const t=TIERS[p.tier]; if(!t||!t.cadence||(p.snoozeUntil&&p.snoozeUntil>now)||dismissed("pick:"+p.id)) continue;
+    const last=lastContact(p,now); if(!last) continue;
+    const left=t.cadence-(now-last)/DAY; // days until they slip
+    if(left>0 && (!best||left<best.left)) best={p,last,left,t};
+  }
+  if(best && best.left<=Math.max(3,best.t.cadence*0.35)) return {kind:"pick",p:best.p,last:best.last,left:best.left,t:best.t};
+  const od=nudgeList.find(n=>n.kind==="overdue"); if(od) return {kind:"pick",p:od.p,last:od.last,left:0,t:TIERS[od.p.tier],overdue:true};
+  return best?{kind:"pick",p:best.p,last:best.last,left:best.left,t:best.t}:null;
+}
+function pickCard(n){
+  const p=n.p, h=healthOfP(p,Date.now()), days=Math.max(1,Math.round(n.left));
+  const why=n.overdue?`Already <b>${fmtAgo(n.last)}</b> since you spoke — past the ${n.t.rhythm} rhythm for your ${n.t.label} circle.`
+    :`Last contact <b>${fmtAgo(n.last)}</b>. In about <b>${days} day${days===1?"":"s"}</b> they slip out of your ${n.t.rhythm} rhythm — a small message now keeps it easy.`;
+  const facts=(p.facts||[]).length?`<div class="why">💡 ${p.facts.slice(-2).map(f=>esc(f.f)).join(" · ")}</div>`:"";
+  return `<div class="card sugg" data-pid="${p.id}" data-key="pick:${p.id}" data-kind="pick" style="background:var(--tint-butter);border-color:transparent">
+    <div class="lbl" style="font-size:12px;color:var(--ink-2);font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Today's pick</div>
+    <div style="display:flex;align-items:center;gap:10px">${av(p.name,p.photo)}
+      <div><div class="nm" style="font-weight:700">${esc(p.name)}</div>
+      <span class="status" style="color:${h.color}"><i style="background:${h.color}"></i>${h.label}</span></div>
+      <div class="spacer"></div><span class="badge">${n.t.label}</span></div>
+    <div class="why">${why}</div>${facts}
+    <div class="row" style="margin-top:8px">${contactBtns(p)}<button class="btn ${contactLinks(p).length?"ghost ":""}small" data-act="opener">✨ Opener</button>
+      <button class="btn ghost small" data-act="log">✓ Log it</button><button class="btn ghost small" data-act="dismiss" data-days="1">Skip today</button></div>
+  </div>`;
+}
 function nudgeCard(n){
   const p=n.p, t=TIERS[p.tier], h=healthOfP(p,Date.now());
   const col=n.kind==="overdue"?h.color:"var(--accent)", lab=n.kind==="overdue"?h.label:KIND_LABEL[n.kind];
@@ -801,7 +842,7 @@ function nudgeCard(n){
       <button class="btn ghost small" data-act="dismiss" data-days="60">Keep as is</button>`;
   else if(n.kind==="introduce") row=`<button class="btn small" data-act="opener">✨ Suggest it to ${esc(capName(p))}</button>
       <button class="btn ghost small" data-act="dismiss" data-days="30">Not now</button>`;
-  else row=`${contactBtns(p)}<button class="btn ${p.tel?"ghost ":""}small" data-act="opener">✨ Opener</button>
+  else row=`${contactBtns(p)}<button class="btn ${contactLinks(p).length?"ghost ":""}small" data-act="opener">✨ Opener</button>
       <button class="btn ghost small" data-act="log">✓ Log it</button>
       <button class="btn ghost small" data-act="${n.kind==="overdue"?"snooze":"dismiss"}" data-days="14">${n.kind==="overdue"?"Snooze":"Not now"}</button>`;
   return `<div class="sugg" data-pid="${p.id}" data-key="${n.key}" data-kind="${n.kind}"${n.q?` data-qid="${n.q.id}"`:""}>
@@ -935,6 +976,47 @@ function renderReflection(){
   el.querySelector("#reflectOk").addEventListener("click",()=>{ dismiss(key,3); renderAll(); });
 }
 
+/* ---------- calendar: "you had lunch with Kate — log it?" ---------- */
+let calEvents=null; // fetched once per foreground
+async function refreshCalendar(){
+  const n=window.SamvarNative; if(!n||!n.calendarEvents||!DB.people.length){ calEvents=[]; return; }
+  try{ calEvents=await n.calendarEvents(Date.now()-4*DAY, Date.now()); }catch(e){ calEvents=[]; }
+  renderCalendarSuggestions();
+}
+function calendarMatches(){
+  if(!calEvents) return [];
+  const out=[];
+  for(const ev of calEvents){
+    if(ev.isAllDay || dismissed("cal:"+ev.id)) continue;
+    const hay=(ev.title+" "+(ev.attendees||[]).join(" ")).toLowerCase();
+    const people=DB.people.filter(p=>p.tier!=="notnow" && nameTokens(p.name).some(tok=>tok.length>=3 && new RegExp("\\b"+tok.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")+"\\b").test(hay)));
+    if(!people.length) continue;
+    const day=new Date(ev.start).toDateString();
+    const logged=people.every(p=>DB.interactions.some(x=>x.personIds.includes(p.id)&&new Date(x.ts).toDateString()===day));
+    if(logged) continue;
+    out.push({ev, people});
+  }
+  return out.slice(0,3);
+}
+function renderCalendarSuggestions(){
+  const el=document.getElementById("calSugg"); if(!el) return;
+  const ms=calendarMatches();
+  el.innerHTML=ms.length?`<div class="sect">From your calendar</div>`+ms.map(({ev,people},i)=>{
+    const when=new Date(ev.start).toLocaleDateString("en-GB",{weekday:"short",day:"numeric",month:"short"});
+    const mins=Math.round((ev.end-ev.start)/60000);
+    return `<div class="card" data-cal="${i}"><div class="nm" style="font-weight:700">${esc(ev.title)}</div>
+      <div class="meta">${when}${mins>0?` · ${mins>=60?Math.round(mins/60)+" h":mins+" min"}`:""} · with ${people.map(p=>esc(capName(p))).join(", ")}</div>
+      <div class="row" style="margin-top:8px"><button class="btn small" data-callog="${i}">✓ Log it</button><button class="btn ghost small" data-calskip="${i}">Skip</button></div></div>`;
+  }).join(""):"";
+  el.querySelectorAll("[data-callog]").forEach(b=>b.addEventListener("click",()=>{
+    const {ev,people}=ms[+b.dataset.callog]; const mins=(ev.end-ev.start)/60000;
+    drafts.push({id:uid(), note:ev.title, personIds:people.map(p=>p.id), pendingNames:[], place:ev.location||"", depth:mins>=60?2:1, channel:"inperson", initiator:"mutual", ts:ev.start, cal:ev.id});
+    dismiss("cal:"+ev.id, 30); switchPage("log"); renderDrafts(); renderCalendarSuggestions();
+    document.getElementById("drafts").scrollIntoView({behavior:"smooth"});
+  }));
+  el.querySelectorAll("[data-calskip]").forEach(b=>b.addEventListener("click",()=>{ dismiss("cal:"+ms[+b.dataset.calskip].ev.id, 30); renderCalendarSuggestions(); }));
+}
+
 /* ---------- nudge notification text & schedule (used by the native shell) ---------- */
 const NUDGE_DAYS={daily:[0,1,2,3,4,5,6],weekdays:[1,2,3,4,5],"3x":[1,3,5],weekly:[1],off:[]};
 function nudgeText(){
@@ -1037,7 +1119,14 @@ function personSheet(pid){
     <div class="fld"><label>Phone</label><div style="display:flex;gap:8px;align-items:center">
       <input type="tel" id="ptel" value="${esc(p.tel||"")}" placeholder="+44 7…">
       <button class="btn small" id="ptelSave">Save</button></div>
-      ${p.tel?`<div style="display:flex;gap:8px;margin-top:8px">${contactBtns(p)}</div>`:`<div class="hint">Add a number to get one-tap Call / Text buttons here and on suggestions.</div>`}</div>
+      </div>
+    <div class="fld"><label>Ways to reach them</label>
+      ${contactBtns(p)||`<div class="hint">Add a number or a handle below to get one-tap buttons here and on suggestions.</div>`}
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">
+        <input type="email" id="pemail" value="${esc(p.email||"")}" placeholder="Email">
+        <input type="text" id="psnap" value="${esc(p.snap||"")}" placeholder="Snapchat username" autocapitalize="none">
+        <input type="text" id="pinsta" value="${esc(p.insta||"")}" placeholder="Instagram username" autocapitalize="none">
+        <button class="btn small" id="phandlesSave">Save</button></div></div>
     <div class="fld"><label>Address / area</label><div style="display:flex;gap:8px">
       <input type="text" id="paddr" value="${esc(p.addr||"")}" placeholder="e.g. Clapham SW4, or Zurich">
       <button class="btn small" id="paddrSave">Save</button></div>
@@ -1063,6 +1152,10 @@ function personSheet(pid){
   dlg.querySelectorAll("[data-fdel]").forEach(b=>b.addEventListener("click",()=>{
     p.facts.splice(+b.dataset.fdel,1); saveDB(); dlg.close(); dlg.remove(); personSheet(pid);
   }));
+  dlg.querySelector("#phandlesSave").addEventListener("click",()=>{
+    p.email=dlg.querySelector("#pemail").value.trim()||undefined; p.snap=dlg.querySelector("#psnap").value.trim()||undefined; p.insta=dlg.querySelector("#pinsta").value.trim()||undefined;
+    saveDB(); dlg.close(); dlg.remove(); personSheet(pid);
+  });
   dlg.querySelector("#ptelSave").addEventListener("click",()=>{
     p.tel=dlg.querySelector("#ptel").value.trim()||undefined;
     saveDB(); dlg.close(); dlg.remove(); personSheet(pid);
@@ -1653,7 +1746,7 @@ function switchPage(p){
   if(p==="people" && peopleView==="places") setTimeout(renderMap,80);
 }
 document.querySelectorAll("nav.tabs button").forEach(b=>b.addEventListener("click",()=>switchPage(b.dataset.p)));
-function renderAll(){ renderHome(); renderTriage(); renderPeople(); renderNetwork(); renderInsights(); renderSettingsUI(); hydratePhotos(); }
+function renderAll(){ renderHome(); renderTriage(); renderPeople(); renderNetwork(); renderInsights(); renderSettingsUI(); renderCalendarSuggestions(); hydratePhotos(); }
 switchPage("home");
 
 /* ---------- first-run welcome ---------- */

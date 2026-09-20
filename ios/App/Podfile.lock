@@ -22,6 +22,8 @@ PODS:
     - Capacitor
   - CapacitorStatusBar (8.0.3):
     - Capacitor
+  - EbarooniCapacitorCalendar (8.6.0):
+    - Capacitor
   - IONCameraLib (2.0.0)
   - IONFilesystemLib (1.1.4)
   - PurchasesHybridCommon (19.0.0):
@@ -43,6 +45,7 @@ DEPENDENCIES:
   - "CapacitorShare (from `../../node_modules/@capacitor/share`)"
   - "CapacitorSplashScreen (from `../../node_modules/@capacitor/splash-screen`)"
   - "CapacitorStatusBar (from `../../node_modules/@capacitor/status-bar`)"
+  - "EbarooniCapacitorCalendar (from `../../node_modules/@ebarooni/capacitor-calendar`)"
   - "RevenuecatPurchasesCapacitor (from `../../node_modules/@revenuecat/purchases-capacitor`)"
 
 SPEC REPOS:
@@ -75,6 +78,8 @@ EXTERNAL SOURCES:
     :path: "../../node_modules/@capacitor/splash-screen"
   CapacitorStatusBar:
     :path: "../../node_modules/@capacitor/status-bar"
+  EbarooniCapacitorCalendar:
+    :path: "../../node_modules/@ebarooni/capacitor-calendar"
   RevenuecatPurchasesCapacitor:
     :path: "../../node_modules/@revenuecat/purchases-capacitor"
 
@@ -90,12 +95,13 @@ SPEC CHECKSUMS:
   CapacitorShare: 2fde721d06a6f83ff5c7578e6a91b190d341ac6a
   CapacitorSplashScreen: 7bf61c2001557ff9e195e601c6b87344480d3c65
   CapacitorStatusBar: eca7bc2b58d9f886f1ef9edb66e57a9b29c121af
+  EbarooniCapacitorCalendar: 091eda3ea4677d95635f8cad0963587fc808025f
   IONCameraLib: 729cae576e1a952602ce750a9790b6dc7d7e2e95
   IONFilesystemLib: e6610c2b260d15e4b9cb9d5e37a87095479b669e
   PurchasesHybridCommon: 526db4f4895166e57ae866b3daeb0025030f84bd
   RevenueCat: 5e390c204dafb3ceeff76ade29bf295b952e6681
   RevenuecatPurchasesCapacitor: 50efeea38d9b2574333563d96235cea7c736add3
 
-PODFILE CHECKSUM: d552b35e318c5ec51c953e77e8455bf0e7bdde65
+PODFILE CHECKSUM: 92bae2a120145027a9d4e9e94c2bf27d12453d7e
 
 COCOAPODS: 1.17.0
