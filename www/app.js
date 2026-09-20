@@ -579,18 +579,22 @@ function saveFile(name, text, mime){
 /* ---------- one-tap contact actions ---------- */
 function telDigits(t){ return String(t||"").replace(/[^\d+]/g,""); }
 // One-tap ways to reach someone. External https links open the app via target=_blank (Capacitor hands them to iOS).
+function phoneList(p){ // [{label, number}] main first
+  const out=[]; const t=telDigits(p.tel); if(t) out.push({label:p.telIsMobile===false?"Phone":"Mobile", number:t});
+  for(const x of (p.tels||[])){ const d=telDigits(x.number); if(d && !out.some(o=>o.number===d)) out.push({label:x.label||"Other", number:d}); }
+  return out;
+}
 function contactLinks(p){
-  const t=telDigits(p.tel), out=[];
-  if(t) out.push({k:"call", label:"📞", title:"Call", href:`tel:${t}`});
-  if(t) out.push({k:"text", label:"💬", title:"Text", href:`sms:${t}`});
+  const t=telDigits(p.tel), out=[], many=phoneList(p).length>1;
+  if(t) out.push({k:"call", label:"📞", title:"Call", href:many?"#":`tel:${t}`, pick:many?"call":""});
+  if(t) out.push({k:"text", label:"💬", title:"Text", href:many?"#":`sms:${t}`, pick:many?"text":""});
   if(p.email) out.push({k:"email", label:"✉️", title:"Email", href:`mailto:${p.email}`});
   if(t && p.telIsMobile!==false){ const d=t.replace(/^\+/,"").replace(/^0/, ""); out.push({k:"wa", label:"🟢", title:"WhatsApp", href:`https://wa.me/${t.startsWith("+")?t.slice(1):d}`, ext:true}); }
-  for(const x of (p.tels||[])){ const d=telDigits(x.number); if(d && d!==t) out.push({k:"call2", label:`📞 ${x.label||"Other"}`, title:`Call ${x.label||"other"}`, href:`tel:${d}`}); }
   return out;
 }
 function contactBtns(p){
   const links=contactLinks(p); if(!links.length) return "";
-  return links.map((l,i)=>`<a class="btn ${i?"ghost ":""}small" href="${l.href}" title="${esc(l.title||"")}" aria-label="${esc(l.title||"")}"${l.ext?' target="_blank" rel="noopener"':""}>${l.label}</a>`).join("");
+  return links.map((l,i)=>`<a class="btn ${i?"ghost ":""}small" href="${l.href}" title="${esc(l.title||"")}" aria-label="${esc(l.title||"")}"${l.pick?` data-pick="${l.pick}" data-pid="${p.id}"`:""}${l.ext?' target="_blank" rel="noopener"':""}>${l.label}</a>`).join("");
 }
 
 /* ---------- rendering ---------- */
@@ -607,6 +611,20 @@ async function photoSrc(ref){
   const n=window.SamvarNative; if(!n||!n.photoUrl) return null;
   try{ const u=await n.photoUrl(ref); if(u) photoCache[ref]=u; return u; }catch(e){ return null; }
 }
+// More than one number: ask which before calling or texting.
+document.addEventListener("click",ev=>{
+  const a=ev.target.closest("a[data-pick]"); if(!a) return;
+  ev.preventDefault(); ev.stopPropagation();
+  const p=DB.people.find(x=>x.id===a.dataset.pid); if(!p) return;
+  const kind=a.dataset.pick, nums=phoneList(p);
+  const dlg=document.createElement("dialog");
+  dlg.innerHTML=`<h2 style="font-size:17px;margin-bottom:10px">${kind==="call"?"Call":"Text"} ${esc(capName(p))} on…</h2>
+    ${nums.map(n=>`<button class="btn secondary" data-num="${esc(n.number)}" style="width:100%;margin-bottom:8px;text-align:left">${esc(n.label)} · ${esc(n.number)}</button>`).join("")}
+    <button class="btn ghost small" id="numCancel">Cancel</button>`;
+  document.body.appendChild(dlg); dlg.showModal();
+  dlg.querySelectorAll("[data-num]").forEach(b=>b.addEventListener("click",()=>{ dlg.close(); dlg.remove(); window.location.href=(kind==="call"?"tel:":"sms:")+b.dataset.num; }));
+  dlg.querySelector("#numCancel").addEventListener("click",()=>{ dlg.close(); dlg.remove(); });
+},true);
 function showPhotoFull(src){
   // A modal <dialog> so it sits above any open profile/edit sheet (they live on the top layer too).
   const v=document.createElement("dialog"); v.className="photoview";
@@ -640,17 +658,19 @@ async function storePhoto(base64){
 }
 async function removePhoto(ref){ if(!ref||ref.startsWith("data:")) return; window.SamvarNative?.deletePhoto?.(ref); delete photoCache[ref]; }
 // Ask for a photo: native gets a Camera / Library choice, the web gets a file picker. Resolves to a DB reference or null.
-function choosePhoto(){
+function choosePhoto(opts={}){
   const n=window.SamvarNative;
   if(n&&n.pickPhoto){
     return new Promise(res=>{
       const dlg=document.createElement("dialog");
-      dlg.innerHTML=`<h2 style="font-size:17px;margin-bottom:10px">Add a photo</h2>
+      dlg.innerHTML=`<h2 style="font-size:17px;margin-bottom:10px">${opts.allowRemove?"Change photo":"Add a photo"}</h2>
         <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn small" data-src="camera">📷 Take photo</button>
-        <button class="btn secondary small" data-src="photos">🖼 Choose from library</button><button class="btn ghost small" data-src="">Cancel</button></div>`;
+        <button class="btn secondary small" data-src="photos">🖼 Choose from library</button>
+        ${opts.allowRemove?`<button class="btn ghost small" data-src="remove" style="color:var(--critical)">Remove photo</button>`:""}
+        <button class="btn ghost small" data-src="">Cancel</button></div>`;
       document.body.appendChild(dlg); dlg.showModal();
       dlg.querySelectorAll("[data-src]").forEach(b=>b.addEventListener("click",async ()=>{
-        dlg.close(); dlg.remove(); if(!b.dataset.src) return res(null);
+        dlg.close(); dlg.remove(); if(!b.dataset.src) return res(null); if(b.dataset.src==="remove") return res("");
         const b64=await n.pickPhoto(b.dataset.src); res(b64?await storePhoto(b64):null); }));
     });
   }
@@ -1134,16 +1154,14 @@ function personSheet(pid){
   const dlg=document.createElement("dialog");
   const sec=(title,body)=>`<div class="psec"><div class="sect" style="margin:0 0 8px">${title}</div>${body}</div>`;
   dlg.innerHTML=`<div style="display:flex;align-items:center;gap:12px;margin-bottom:4px">
-      <div style="transform:scale(1.5);transform-origin:left center">${av(p.name,p.photo)}</div>
-      <div style="margin-left:14px;min-width:0;flex:1"><h2 style="font-size:18px;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(p.name)}</h2>
-        <div style="display:flex;gap:6px;margin-top:6px"><button class="btn ghost small" id="pphoto">${p.photo?"Change photo":"Add photo"}</button>${p.photo?`<button class="btn ghost small" id="pphotoRm">Remove</button>`:""}</div></div>
+      <div class="avwrap"><div style="transform:scale(1.5);transform-origin:left center">${av(p.name,p.photo)}</div>
+        <button class="avedit" id="pphoto" title="${p.photo?"Change photo":"Add photo"}" aria-label="Edit photo">✎</button></div>
+      <div style="min-width:0;flex:1"><h2 style="font-size:18px;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(p.name)}</h2>
+        <div class="meta">${TIERS[p.tier]?.label||""}${p.contactId?" · from Contacts":""}</div></div>
       <button class="btn small" id="dlgCloseTop" style="flex:none">Done</button></div>
     ${sec("Circle",`<div class="seg" style="margin:0">${Object.entries(TIERS).map(([k,t])=>`<button data-tier="${k}" class="${p.tier===k?"on":""}">${t.label}</button>`).join("")}</div>`)}
-    ${sec("Reach them",`${contactBtns(p)?`<div class="btngrid reachrow">${contactBtns(p)}</div>`:`<div class="hint" style="margin:0 0 8px">Add a mobile number to get one-tap Call, Text and WhatsApp buttons here and on suggestions.</div>`}
-      <div style="display:flex;gap:8px;margin-top:${contactBtns(p)?"10":"0"}px">
-        <input type="tel" id="ptel" value="${esc(p.tel||"")}" placeholder="Mobile number">
-        <button class="btn small" id="phandlesSave">Save</button></div>
-      ${p.contactId?`<div class="hint" style="margin-top:6px">Linked to Contacts — number, email, address, photo and birthday refresh automatically.</div>`:p.email?`<div class="hint" style="margin-top:6px">✉️ ${esc(p.email)}</div>`:""}`)}
+    ${sec("Reach them",`${contactBtns(p)?`<div class="btngrid reachrow">${contactBtns(p)}</div>`:`<div class="hint" style="margin:0">No number yet — add ${esc(capName(p))} from Contacts to get one-tap Call, Text and WhatsApp buttons.</div>`}
+      ${p.contactId?`<div class="hint" style="margin-top:8px">Linked to Contacts — numbers, email, address, photo and birthday refresh automatically.</div>`:""}`)}
     ${sec("Address / area",`<div style="display:flex;gap:8px;align-items:flex-start">
       <textarea id="paddr" rows="${Math.min(5,Math.max(2,String(p.addr||"").split("\n").length))}" placeholder="Street\nTown\nPostcode" style="min-height:0;resize:none;line-height:1.4">${esc(p.addr||"")}</textarea>
       <button class="btn small" id="paddrSave">Save</button></div>
@@ -1162,16 +1180,13 @@ function personSheet(pid){
     <button class="btn" id="dlgClose" style="width:100%;margin-top:14px;padding:14px;font-size:17px">Done</button>
     <div style="text-align:center;margin-top:10px"><button class="btn ghost small" id="dlgDel" style="color:var(--critical);font-size:12px;padding:4px 8px">Remove person</button></div>`;
   document.body.appendChild(dlg); dlg.showModal(); hydratePhotos(dlg);
-  dlg.querySelector("#pphoto").addEventListener("click",async ()=>{ const ref=await choosePhoto(); if(!ref) return; await removePhoto(p.photo); p.photo=ref; saveDB(); dlg.close(); dlg.remove(); renderAll(); personSheet(pid); });
-  dlg.querySelector("#pphotoRm")?.addEventListener("click",async ()=>{ await removePhoto(p.photo); p.photo=undefined; saveDB(); dlg.close(); dlg.remove(); renderAll(); personSheet(pid); });
+  dlg.querySelector("#pphoto").addEventListener("click",async ev=>{ ev.stopPropagation();
+    const ref=await choosePhoto({allowRemove:!!p.photo}); if(ref===null) return;
+    await removePhoto(p.photo); p.photo=ref||undefined; saveDB(); dlg.close(); dlg.remove(); renderAll(); personSheet(pid); });
   dlg.querySelectorAll("[data-tier]").forEach(b=>b.addEventListener("click",()=>{ p.tier=b.dataset.tier; saveDB(); dlg.close(); dlg.remove(); renderAll(); }));
   dlg.querySelectorAll("[data-fdel]").forEach(b=>b.addEventListener("click",()=>{
     p.facts.splice(+b.dataset.fdel,1); saveDB(); dlg.close(); dlg.remove(); personSheet(pid);
   }));
-  dlg.querySelector("#phandlesSave").addEventListener("click",()=>{
-    const tel=dlg.querySelector("#ptel").value.trim()||undefined; if(tel!==p.tel){ p.tel=tel; p.telIsMobile=undefined; }
-    saveDB(); dlg.close(); dlg.remove(); personSheet(pid);
-  });
   dlg.querySelector("#dlgCloseTop").addEventListener("click",()=>{ dlg.close(); dlg.remove(); });
   dlg.querySelector("#paddrSave").addEventListener("click",async ()=>{
     const v=dlg.querySelector("#paddr").value.split(/\n|,\s*/).map(x=>x.trim()).filter(Boolean).join("\n");
