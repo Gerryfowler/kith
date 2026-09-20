@@ -181,7 +181,11 @@ async function samvarAI(path, payload){
     headers:{"content-type":"application/json","authorization":"Bearer "+deviceId()},
     body:JSON.stringify(payload)});
   const plan=r.headers.get("x-samvar-plan");
-  if(plan){ DB.settings.pro=Object.assign(DB.settings.pro||{},{active:plan==="pro",checked:Date.now()}); saveDB(); }
+  if(plan){ DB.settings.aiPlan={plan, checked:Date.now()};
+    // The device's own App Store check (RevenueCat SDK) is authoritative; the server may confirm Pro but never revoke it.
+    const p=DB.settings.pro||{};
+    if(plan==="pro" && !(p.active && p.source==="appstore")) DB.settings.pro=Object.assign(p,{active:true,checked:Date.now()});
+    saveDB(); }
   if(r.status===402) throw new QuotaError("quota");
   if(!r.ok){ const e=await r.text().catch(()=>""); throw new Error("Samvar AI "+r.status+(e?": "+e.slice(0,120):"")); }
   return r.json();
@@ -831,7 +835,7 @@ async function openerSheet(p,opts={}){
   dlg.innerHTML=`<h2 style="font-size:17px">Message ${esc(capName(p))}</h2><p class="hint">Thinking about what to say…</p>`;
   document.body.appendChild(dlg); dlg.showModal();
   try{ render(await aiOpeners(p,opts),"ai"); return; }
-  catch(e){ if(e instanceof QuotaError){ dlg.close(); dlg.remove(); paywallSheet("Your trial or subscription has ended — renew to keep the openers."); return; } }
+  catch(e){ if(e instanceof QuotaError){ dlg.close(); dlg.remove(); if(!isPro()) paywallSheet("Your trial or subscription has ended — renew to keep the openers."); else alert("Samvar AI couldn’t verify your subscription just now. Try again in a few minutes."); return; } }
   render(ruleOpeners(p,opts),"rule");
 }
 
@@ -893,6 +897,9 @@ function renderSettingsUI(){
     :`<h2 style="font-size:17px">Samvar Pro</h2><p class="hint">Everything in Samvar, free for 7 days, then a monthly or yearly subscription at your local App Store price. Cancel any time.</p>
       <button class="btn small" id="proBtn" style="margin-top:10px">Start free trial</button>`;
   document.getElementById("proBtn")?.addEventListener("click",()=>paywallSheet(""));
+  const ai=DB.settings.aiPlan, aiEl=document.getElementById("aiStatus");
+  if(aiEl){ aiEl.textContent=!ai?"Samvar AI: not contacted yet.":ai.plan==="pro"?`Samvar AI: connected as Pro (checked ${fmtAgo(ai.checked)}).`:`Samvar AI: server could not verify your subscription (checked ${fmtAgo(ai.checked)}). Tap to re-check.`;
+    aiEl.onclick=async ()=>{ aiEl.textContent="Samvar AI: checking…"; try{ const r=await fetch(API_BASE+"/v1/me",{headers:{"authorization":"Bearer "+deviceId()}}); const j=await r.json(); DB.settings.aiPlan={plan:j.plan,checked:Date.now()}; saveDB(); }catch(e){ DB.settings.aiPlan={plan:"unreachable",checked:Date.now()}; saveDB(); } renderSettingsUI(); }; }
   document.getElementById("devCard").style.display=devMode()?"block":"none";
   const G=weekGoal();
   document.querySelectorAll("#goalSeg button").forEach(b=>b.classList.toggle("on",+b.dataset.g===G));
@@ -1128,7 +1135,8 @@ document.getElementById("parseBtn").addEventListener("click",async ()=>{
   const notice=document.getElementById("aiNotice"); notice.style.display="none";
   try{ drafts=await aiParse(text); if(!drafts.length){ alert("Couldn't find an interaction in that note — try describing who you spoke to."); } }
   catch(e){ drafts=parseNote(text);
-    if(e instanceof QuotaError) paywallSheet("Your trial or subscription has ended — this note was filed with the simple rules instead.");
+    if(e instanceof QuotaError && !isPro()) paywallSheet("Your trial or subscription has ended — this note was filed with the simple rules instead.");
+    else if(e instanceof QuotaError){ notice.textContent="Samvar AI couldn’t verify your subscription just now, so this note was filed with the simple rules. It usually clears itself within a few minutes."; notice.style.display="block"; }
     else { const offline=/Failed to fetch|NetworkError|Load failed/.test(e.message);
       notice.textContent=offline?"Samvar AI is unreachable right now, so this note was filed with the simple rules — check the details below.":"Couldn't reach Samvar AI ("+e.message.slice(0,80)+") — filed with the simple rules instead.";
       notice.style.display="block"; } }

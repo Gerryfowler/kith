@@ -70,7 +70,8 @@ async function planFor(device: string, env: Env): Promise<Plan> {
   let plan: Plan = "none";
   try {
     const r = await fetch(`https://api.revenuecat.com/v1/subscribers/${encodeURIComponent(device)}`, {
-      headers: { authorization: `Bearer ${env.REVENUECAT_SECRET}`, "x-platform": "ios" },
+      // No X-Platform header: RevenueCat rejects secret keys sent with it (403 code 7243, "should not be used in your app").
+      headers: { authorization: `Bearer ${env.REVENUECAT_SECRET}` },
     });
     if (r.ok) {
       const data = (await r.json()) as { subscriber?: { entitlements?: Record<string, { expires_date: string | null }> } };
