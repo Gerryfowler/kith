@@ -163,6 +163,7 @@ export default {
       ctx.waitUntil(bump(env, dayKeyFor, 2 * 86400));
       return json(out, 200, meta);
     } catch (err) {
+      console.error("ai call failed", url.pathname, err instanceof Error ? `${err.name}: ${err.message}` : String(err));
       if (err instanceof Anthropic.RateLimitError) return json({ error: "busy, retry shortly" }, 503, { ...meta, "retry-after": "10" });
       if (err instanceof Anthropic.APIError) return json({ error: `upstream ${err.status}` }, 502, meta);
       return json({ error: "server error" }, 500, meta);
