@@ -258,7 +258,8 @@ Each object:
  "date":"YYYY-MM-DD",  // resolve 'yesterday', 'last night', 'this morning', weekday names, relative to today's date given
  "place":"place mentioned in the note (restaurant, area, town) or empty string",
  "summary":"<12 words capturing the interaction",
- "facts":[{"person":"Name","fact":"short durable fact worth remembering before next contacting them","kind":"family"|"likes"|"plans"|"work"|"date"|"other"}]}
+ "facts":[{"person":"Name","fact":"short durable fact worth remembering before next contacting them","kind":"family"|"likes"|"plans"|"work"|"date"|"other","followUp":"YYYY-MM-DD or empty"}]}
+"followUp" is the date, if any, when it would be natural to ask how something went (interview, move, operation, trip, first day at school, race) — resolve relative phrases against today's date and add a day or two. Empty when there is no upcoming moment.
 Facts are long-term memory, so be SELECTIVE: only durable things worth knowing months from now — birthdays and anniversaries, partner and children's names, pets' names, a job change, a house move, a health matter, a major life event. Do NOT record passing details, preferences, opinions, plans for next week or what was discussed (the "summary" field already captures the topic). Most interactions yield 0 facts; rarely more than 1. Write each fact so it stands alone ("daughter Iris, started secondary school Sept 2026"). Use the known person's name in "person" even when the note says "she"/"his wife" — attribute to whoever the interaction is with.
 ALWAYS capture birthdays, anniversaries and other recurring personal dates as kind "date", converting relative mentions into the actual calendar date using today's date: "it was her birthday yesterday" on 19 August → {"fact":"birthday 18 August","kind":"date"}. A birthday is never trivia.
 The note is usually dictated speech-to-text, so names are often mis-transcribed. If a name is phonetically or visually close to someone on the known-people list ("Sara"/"Serra"→Sarah, "Tomm"→Tom, "Jaymes"→James), treat it as that known person and return the known spelling in "people". Only put a name in "new_people" if the note-writer actually interacted with that person AND they are clearly not on the known list. People merely mentioned (a friend's partner, child, colleague) are NOT new_people — they belong in facts.
@@ -271,6 +272,8 @@ function nominatim(url){
     .then(r=>r&&r.ok?r.json():null).catch(()=>null);
   const p=geoQueue.then(run); geoQueue=p.catch(()=>{}); return p;
 }
+function townFromAddr(a){ const lines=String(a||"").split(/\n|,\s*/).map(x=>x.trim()).filter(Boolean); if(!lines.length) return "";
+  const t=lines.find((l,i)=>i>0 && !/\d/.test(l)) || lines.find(l=>!/\d/.test(l)) || ""; const country=lines.length>2?lines[lines.length-1]:""; return [t, country&&!/\d/.test(country)&&country!==t?country:""].filter(Boolean).join(", "); }
 function addrLine(a){ return String(a||"").split(/\n+/).map(x=>x.trim()).filter(Boolean).join(", "); }
 function addrHtml(a){ return String(a||"").split(/\n+/).map(x=>esc(x.trim())).filter(Boolean).join("<br>"); }
 function shortPlace(dn){ return String(dn||"").split(",").map(s=>s.trim()).slice(0,2).join(", "); }
@@ -843,9 +846,16 @@ function nudges(){
       why:`${esc(capName(a))} and ${esc(capName(b))} both know ${esc(capName(c))}, but you've never had them in the same room.`});
     break outer;
   }
+  // follow-ups: "Iris started school this week — ask how it went"
+  for(const p of DB.people){ if(p.tier==="notnow") continue;
+    for(const f of (p.facts||[])){ if(!f.followUp) continue; const age=(now-f.followUp)/DAY;
+      if(age>=0 && age<=10 && !DB.interactions.some(x=>x.personIds.includes(p.id)&&x.ts>=f.followUp))
+        out.push({kind:"followup", key:"fu:"+p.id+":"+f.followUp, p, urgency:1.1, fact:f,
+          why:`${esc(f.f)} — that was ${age<1?"today":age<2?"yesterday":Math.round(age)+" days ago"}. A good moment to ask how it went.`}); }
+  }
   return out.filter(n=>!dismissed(n.key)).sort((a,b)=>b.urgency-a.urgency);
 }
-const KIND_LABEL={deepen:"Go deeper",promote:"Closer than you think",introduce:"Introduce"};
+const KIND_LABEL={deepen:"Go deeper",promote:"Closer than you think",introduce:"Introduce",followup:"Ask how it went"};
 // The one person most likely to slip past their circle's rhythm next: soonest to cross the threshold,
 // or, if everyone is already past it, the most overdue. Ignores people snoozed or dismissed today.
 function todaysPick(nudgeList){
@@ -902,7 +912,7 @@ function nudgeCard(n){
   else row=`${contactBtns(p)}<button class="btn ${contactLinks(p).length?"ghost ":""}small" data-act="opener">✨ Opener</button>
       <button class="btn ghost small" data-act="log">✓ Log it</button>
       <button class="btn ghost small" data-act="${n.kind==="overdue"?"snooze":"dismiss"}" data-days="14">${n.kind==="overdue"?"Snooze":"Not now"}</button>`;
-  return `<div class="sugg" data-pid="${p.id}" data-key="${n.key}" data-kind="${n.kind}"${n.q?` data-qid="${n.q.id}"`:""}>
+  return `<div class="sugg" data-pid="${p.id}" data-key="${n.key}" data-kind="${n.kind}"${n.q?` data-qid="${n.q.id}"`:""}${n.fact?` data-fu="${esc(n.fact.f)}"`:""}>
     ${head}<div class="why">${why}</div>${facts}<div class="btngrid">${row}</div></div>`;
 }
 function bindNudgeButtons(root){
@@ -916,7 +926,7 @@ function bindNudgeButtons(root){
       if(act==="snooze"){ p.snoozeUntil=Date.now()+7*DAY; saveDB(); renderAll(); }
       if(act==="dismiss"){ dismiss(card.dataset.key,+b.dataset.days||14); renderAll(); }
       if(act==="promote"&&TIERS[b.dataset.to]){ p.tier=b.dataset.to; saveDB(); renderAll(); }
-      if(act==="opener"){ if(!entitled()){ paywallSheet("Openers are part of Samvar — start your free trial."); return; } openerSheet(p,{q, deepen:card.dataset.kind==="deepen"}); }
+      if(act==="opener"){ if(!entitled()){ paywallSheet("Openers are part of Samvar — start your free trial."); return; } openerSheet(p,{q, deepen:card.dataset.kind==="deepen", followUp:card.dataset.fu||""}); }
     }));
   });
 }
@@ -924,15 +934,17 @@ function bindNudgeButtons(root){
 /* ---------- drafted openers ---------- */
 const OPENER_SYSTEM=`You write short, warm, natural opening messages someone can send to a friend they want to stay close to.
 Return ONLY a JSON array of 3 strings. Each is at most 25 words, British English, casual, and sounds like a real text from a friend — no "hope this finds you well", no sign-offs, no hashtags, emojis only if natural.
-Use the supplied facts to be specific and caring; never invent facts. Vary the three: one picks up on a fact, one proposes a concrete plan, one is light and easy to reply to.`;
+Use the supplied facts to be specific and caring; never invent facts. Vary the three: one picks up on a fact, one proposes a concrete plan, one is light and easy to reply to.
+If "Where they are" context is supplied (weather, a local event, a headline about their town), you may weave ONE of those details into ONE of the messages when it feels natural and friendly; never grim news, politics or crime.`;
 async function aiOpeners(p,opts){
   const xs=DB.interactions.filter(x=>x.personIds.includes(p.id)).sort((a,b)=>b.ts-a.ts).slice(0,3);
   const intent=opts.q?`Intent: suggest that the three of us (me, ${p.name} and ${opts.q.name}) get together soon.`
-    :opts.deepen?"Intent: go beyond logistics — ask about something that genuinely matters to them.":"";
+    :opts.deepen?"Intent: go beyond logistics — ask about something that genuinely matters to them."
+    :opts.followUp?`Intent: ask how this went — "${opts.followUp}".`:"";
   const brief={name:p.name, tier:TIERS[p.tier].label,
     last:xs[0]?fmtAgo(xs[0].ts)+" — "+(xs[0].note||DEPTHS[xs[0].depth-1].label):"never logged",
     recent:xs.slice(1).map(x=>`${fmtAgo(x.ts)}: ${x.note||DEPTHS[x.depth-1].label}`).join("; ")||"none",
-    facts:(p.facts||[]).map(f=>f.f).join("; ")||"nothing specific", intent};
+    facts:(p.facts||[]).map(f=>f.f).join("; ")||"nothing specific", intent, town:townFromAddr(p.addr)||undefined};
   let arr;
   if(getApiKey()){
     const out=await claudeCall(OPENER_SYSTEM,
@@ -1113,6 +1125,7 @@ function nudgeText(){
   // Morning: one person, by name, and why. Falls back to birthdays / a warm line.
   const pick=todaysPick(nudges());
   for(const b of upcomingBirthdays(1)) if(b.days===0) return {title:`🎂 ${capName(b.p)}'s birthday today`, body:"A message now will make their day.", pid:b.p.id};
+  const fu=nudges().find(n=>n.kind==="followup"); if(fu) return {title:`Ask ${capName(fu.p)} how it went`, body:fu.fact.f, pid:fu.p.id};
   if(pick){ const p=pick.p, t=pick.t;
     const body=pick.overdue?`It's been ${fmtAgo(pick.last)} — past your ${t.rhythm} rhythm. One message today keeps it easy.`
       :`${Math.max(1,Math.round(pick.left))} day${Math.round(pick.left)===1?"":"s"} before they slip out of your ${t.rhythm} rhythm. A small message now keeps it easy.`;
@@ -1406,7 +1419,7 @@ function renderDrafts(){
     if((d.pendingNames||[]).length){ alert("Tap the highlighted name(s) to file them into a circle first."); return; }
     if(!d.personIds.length){ alert("Tag at least one person (type a name and press return)."); return; }
     DB.interactions.push({id:uid(),ts:d.ts,personIds:d.personIds,depth:d.depth,channel:d.channel,note:d.note,place:d.place||"",loc:d.loc,photo:d.photo,
-      ai:!!d.ai, facts:(d.facts||[]).map(f=>({person:f.person,fact:f.fact,kind:f.kind}))});
+      ai:!!d.ai, facts:(d.facts||[]).map(f=>({person:f.person,fact:f.fact,kind:f.kind,followUp:f.followUp||""}))});
     // attach remembered facts to their people (fuzzy names; fall back to the tagged person)
     for(const f of (d.facts||[])){
       let p=DB.people.find(x=>x.name.toLowerCase()===f.person.toLowerCase()
@@ -1415,7 +1428,7 @@ function renderDrafts(){
       if(!p) p=fuzzyFind(f.person);
       if(!p && d.personIds.length===1) p=DB.people.find(x=>x.id===d.personIds[0]);
       if(p){ p.facts=p.facts||[];
-        if(!p.facts.some(x=>x.f.toLowerCase()===f.fact.toLowerCase())) p.facts.push({f:f.fact,kind:f.kind,ts:d.ts}); }
+        if(!p.facts.some(x=>x.f.toLowerCase()===f.fact.toLowerCase())) p.facts.push({f:f.fact,kind:f.kind,ts:d.ts,followUp:f.followUp?Date.parse(f.followUp)||undefined:undefined}); }
     }
     // clear snoozes for these people
     d.personIds.forEach(id=>{const p=DB.people.find(x=>x.id===id); if(p) delete p.snoozeUntil;});

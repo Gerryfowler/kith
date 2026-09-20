@@ -1,7 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
-import { ADDRESS_SYSTEM, OPENER_SYSTEM, PARSE_SYSTEM } from "./prompts";
+import { ADDRESS_SYSTEM, LOCAL_SYSTEM, OPENER_SYSTEM, PARSE_SYSTEM } from "./prompts";
 
 export interface Env {
   ANTHROPIC_API_KEY: string;
@@ -36,6 +36,7 @@ const Interaction = z.object({
     person: z.string(),
     fact: z.string(),
     kind: z.enum(["family", "likes", "plans", "work", "date", "other"]),
+    followUp: z.string().default(""),
   })),
 });
 const ParseOut = z.object({ interactions: z.array(Interaction) });
@@ -47,7 +48,9 @@ const ParseBody = z.object({ note: z.string().min(1).max(4000), people: z.string
 const OpenersBody = z.object({
   name: z.string().max(80), tier: z.string().max(40), last: z.string().max(300),
   recent: z.string().max(600), facts: z.string().max(1500), intent: z.string().max(300),
+  town: z.string().max(120).optional(),
 });
+const LocalOut = z.object({ items: z.array(z.object({ text: z.string(), kind: z.enum(["weather", "event", "news", "sport"]) })) });
 
 function json(body: unknown, status = 200, extra: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(body), {
@@ -154,11 +157,32 @@ export default {
         const b = OpenersBody.safeParse(body);
         if (!b.success) return json({ error: "bad request" }, 400, meta);
         const d = b.data;
+        let local = "";
+        if (d.town) {
+          // One web-search lookup per town per day, shared across devices via KV.
+          const lk = `l:${d.town.toLowerCase().replace(/\s+/g, " ").trim()}:${dayKey()}`;
+          const cached = await env.QUOTA.get(lk);
+          if (cached !== null) local = cached;
+          else {
+            try {
+              const lr = await client.messages.parse({
+                model: env.MODEL,
+                max_tokens: 800,
+                system: LOCAL_SYSTEM,
+                tools: [{ type: "web_search_20260209", name: "web_search", max_uses: 3 }],
+                messages: [{ role: "user", content: `Town: ${d.town}. Today: ${new Date().toDateString()}.` }],
+                output_config: { format: zodOutputFormat(LocalOut), effort: "low" },
+              });
+              local = (lr.parsed_output?.items ?? []).slice(0, 3).map((i) => `${i.kind}: ${i.text}`).join("; ");
+            } catch (e) { console.warn("local context failed", String(e)); local = ""; }
+            ctx.waitUntil(env.QUOTA.put(lk, local, { expirationTtl: 86400 }));
+          }
+        }
         const res = await client.messages.parse({
           model: env.MODEL,
           max_tokens: 1000,
           system: OPENER_SYSTEM + '\nWrap the array as {"openers": [...]}.',
-          messages: [{ role: "user", content: `Friend: ${d.name} (${d.tier}).\nLast contact: ${d.last}.\nRecent: ${d.recent}.\nThings I know about them: ${d.facts}.\n${d.intent}` }],
+          messages: [{ role: "user", content: `Friend: ${d.name} (${d.tier}).\nLast contact: ${d.last}.\nRecent: ${d.recent}.\nThings I know about them: ${d.facts}.${local ? `\nWhere they are (${d.town}): ${local}` : ""}\n${d.intent}` }],
           output_config: { format: zodOutputFormat(OpenersOut), effort: "medium" },
         });
         if (res.stop_reason === "refusal") return json({ error: "refused" }, 422, meta);
