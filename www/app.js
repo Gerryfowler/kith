@@ -30,9 +30,9 @@ let DB=loadDB();
 
 /* ---------- model constants ---------- */
 const TIERS={
-  inner:{label:"Inner",    cadence:7,  halflife:14,  weight:1.2, rhythm:"weekly"},     // every week
-  invest:{label:"Close",    cadence:30, halflife:40,  weight:1.5, rhythm:"monthly"},    // every month
-  warm:{label:"Friendly",  cadence:90, halflife:110, weight:0.7, rhythm:"quarterly"},  // every quarter
+  inner:{label:"Inner",    cadence:7,  halflife:14,  weight:1.2, rhythm:"weekly",    remind:14}, // every week; reminders only after 2 weeks
+  invest:{label:"Close",    cadence:30, halflife:40,  weight:1.5, rhythm:"monthly",   remind:30}, // every month
+  warm:{label:"Friendly",  cadence:90, halflife:110, weight:0.7, rhythm:"quarterly", remind:90}, // every quarter
   notnow:{label:"Not now",     cadence:0,  halflife:0,  weight:0}
 };
 const CHANNELS={inperson:{label:"In person",base:10},call:{label:"Call",base:5},message:{label:"Message",base:2}};
@@ -595,6 +595,7 @@ function saveFile(name, text, mime){
 /* ---------- one-tap contact actions ---------- */
 function telDigits(t){ return String(t||"").replace(/[^\d+]/g,""); }
 // One-tap ways to reach someone. External https links open the app via target=_blank (Capacitor hands them to iOS).
+const WA_ICON=`<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" style="vertical-align:middle"><path fill="#25D366" d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"/></svg>`;
 function phoneList(p){ // [{label, number}] main first
   const out=[]; const t=telDigits(p.tel); if(t) out.push({label:p.telIsMobile===false?"Phone":"Mobile", number:t});
   for(const x of (p.tels||[])){ const d=telDigits(x.number); if(d && !out.some(o=>o.number===d)) out.push({label:x.label||"Other", number:d}); }
@@ -605,7 +606,7 @@ function contactLinks(p){
   if(t) out.push({k:"call", label:"📞", title:"Call", href:many?"#":`tel:${t}`, pick:many?"call":""});
   if(t) out.push({k:"text", label:"💬", title:"Text", href:many?"#":`sms:${t}`, pick:many?"text":""});
   if(p.email) out.push({k:"email", label:"✉️", title:"Email", href:`mailto:${p.email}`});
-  if(t && p.telIsMobile!==false){ const d=t.replace(/^\+/,"").replace(/^0/, ""); out.push({k:"wa", label:"🟢", title:"WhatsApp", href:`https://wa.me/${t.startsWith("+")?t.slice(1):d}`, ext:true}); }
+  if(t && p.telIsMobile!==false){ const d=t.replace(/^\+/,"").replace(/^0/, ""); out.push({k:"wa", label:WA_ICON, title:"WhatsApp", href:`https://wa.me/${t.startsWith("+")?t.slice(1):d}`, ext:true}); }
   return out;
 }
 function contactBtns(p){
@@ -774,6 +775,7 @@ function renderHome(){
   }));
 }
 
+const MIN_QUIET_DAYS=5; // never suggest someone you've spoken to in the last 5 days
 function suggestions(){
   const now=Date.now(), out=[];
   for(const p of DB.people){
@@ -781,7 +783,8 @@ function suggestions(){
     if(p.snoozeUntil && p.snoozeUntil>now) continue;
     const last=lastContact(p,now);
     const days=last?(now-last)/DAY:(p.added?(now-p.added)/DAY:999); // new people get a grace period
-    const overdue=days/t.cadence;
+    if(days<MIN_QUIET_DAYS) continue;            // spoke recently — no reminder
+    const overdue=days/(t.remind||t.cadence);   // Inner: only once two weeks have passed
     if(overdue<1) continue;
     out.push({p, last, days:Math.round(days), urgency:overdue*t.weight});
   }
@@ -825,11 +828,14 @@ function todaysPick(nudgeList){
   for(const p of DB.people){
     const t=TIERS[p.tier]; if(!t||!t.cadence||(p.snoozeUntil&&p.snoozeUntil>now)||dismissed("pick:"+p.id)) continue;
     const last=lastContact(p,now); if(!last) continue;
-    const left=t.cadence-(now-last)/DAY; // days until they slip
-    if(left>0 && (!best||left<best.left)) best={p,last,left,t};
+    const since=(now-last)/DAY; if(since<MIN_QUIET_DAYS) continue;
+    const left=(t.remind||t.cadence)-since; // days until they slip past the reminder threshold
+    // Close and Friendly first — those are the ones that quietly drift; Inner only once it's been a while.
+    const rank=(p.tier==="inner"?100:0)+left;
+    if(left>0 && (!best||rank<best.rank)) best={p,last,left,t,rank};
   }
-  if(best && best.left<=Math.max(3,best.t.cadence*0.35)) return {kind:"pick",p:best.p,last:best.last,left:best.left,t:best.t};
   const od=nudgeList.find(n=>n.kind==="overdue"); if(od) return {kind:"pick",p:od.p,last:od.last,left:0,t:TIERS[od.p.tier],overdue:true};
+  if(best && best.left<=Math.max(3,(best.t.remind||best.t.cadence)*0.35)) return {kind:"pick",p:best.p,last:best.last,left:best.left,t:best.t};
   return best?{kind:"pick",p:best.p,last:best.last,left:best.left,t:best.t}:null;
 }
 function pickBlock(n){
@@ -980,13 +986,13 @@ function renderReflection(){
   let line;
   if(!DB.people.length) line="Add a few people and Samvar will start noticing who you'd love to hear from.";
   else if(!xs.length) line=early?"Fresh week. One message today is all it takes to get it moving.":"A quiet week so far — that's fine. One small message changes it.";
-  else if(quality.length) line=`Quality time with ${qNames.join(" and ")} this week 💛 Lovely. Keep it rolling:`;
-  else line=`${xs.length} catch-up${xs.length===1?"":"s"} so far this week — nice work. Next up:`;
   const pick=todaysPick(nudges());
+  if(line){} else if(quality.length) line=`Quality time with ${qNames.join(" and ")} this week 💛 Lovely.${pick?" Keep it rolling:":""}`;
+  else line=`${xs.length} catch-up${xs.length===1?"":"s"} so far this week — nice work.${pick?" Next up:":""}`;
   el.innerHTML=`<div class="card t-mint" style="padding-bottom:12px">
     <div class="lbl" style="font-size:12px;color:var(--ink-2);font-weight:600;text-transform:uppercase;letter-spacing:.05em">This week</div>
     <div style="font-size:15px;margin-top:6px;line-height:1.5">${line}</div>
-    ${pick?pickBlock(pick):(DB.people.length?`<div class="why" style="margin-top:8px">Everyone's in rhythm right now — enjoy it.</div>`:"")}
+    ${pick?pickBlock(pick):(DB.people.length?`<div class="why" style="margin-top:8px">Everyone's in rhythm right now — enjoy it. Samvar will nudge you when someone drifts.</div>`:"")}
   </div>`;
   bindNudgeButtons(el);
 }
@@ -1174,7 +1180,7 @@ function personSheet(pid){
         <button class="avedit" id="pphoto" title="${p.photo?"Change photo":"Add photo"}" aria-label="Edit photo">✎</button></div>
       <div style="min-width:0;flex:1"><h2 style="font-size:18px;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(p.name)}</h2>
         <div class="meta">${TIERS[p.tier]?.label||""}${p.contactId?" · from Contacts":""}</div></div>
-      <button class="btn small" id="dlgCloseTop" style="flex:none">Done</button></div>
+      <button class="btn small" id="dlgCloseTop" style="flex:none;background:var(--good)">Done</button></div>
     ${sec("Circle",`<div class="seg" style="margin:0">${Object.entries(TIERS).map(([k,t])=>`<button data-tier="${k}" class="${p.tier===k?"on":""}">${t.label}</button>`).join("")}</div>`)}
     ${sec("Reach them",`${contactBtns(p)?`<div class="btngrid reachrow">${contactBtns(p)}</div>`:`<div class="hint" style="margin:0">No number yet — add ${esc(capName(p))} from Contacts to get one-tap Call, Text and WhatsApp buttons.</div>`}
       ${p.contactId?`<div class="hint" style="margin-top:8px">Linked to Contacts — numbers, email, address, photo and birthday refresh automatically.</div>`:""}`)}
@@ -1193,7 +1199,7 @@ function personSheet(pid){
       ${(x.facts||[]).length?`<div class="meta">💡 ${x.facts.slice(0,2).map(f=>esc(f.fact)).join(" · ")}</div>`:""}</div>
       <div class="spacer"></div><button class="xdel" data-xdel="${x.id}">✕</button></div>`).join("")
       :`<div class="empty">No interactions logged yet.</div>`)}
-    <button class="btn" id="dlgClose" style="width:100%;margin-top:14px;padding:14px;font-size:17px">Done</button>
+    <button class="btn" id="dlgClose" style="width:100%;margin-top:14px;padding:14px;font-size:17px;background:var(--good)">Done</button>
     <div style="text-align:center;margin-top:10px"><button class="btn ghost small" id="dlgDel" style="color:var(--critical);font-size:12px;padding:4px 8px">Remove person</button></div>`;
   document.body.appendChild(dlg); dlg.showModal(); hydratePhotos(dlg);
   dlg.querySelector("#pphoto").addEventListener("click",async ev=>{ ev.stopPropagation();
