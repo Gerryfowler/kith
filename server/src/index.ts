@@ -76,8 +76,12 @@ async function planFor(device: string, env: Env): Promise<Plan> {
       const data = (await r.json()) as { subscriber?: { entitlements?: Record<string, { expires_date: string | null }> } };
       const ent = data.subscriber?.entitlements?.[env.RC_ENTITLEMENT];
       if (ent && (ent.expires_date === null || Date.parse(ent.expires_date) > Date.now())) plan = "pro";
+      else console.log(`revenuecat: no active "${env.RC_ENTITLEMENT}" entitlement for ${device}`, Object.keys(data.subscriber?.entitlements ?? {}));
+    } else {
+      // Visible in `wrangler tail`: a 401/403 here means the secret key is wrong or lacks read permissions.
+      console.error(`revenuecat lookup failed: HTTP ${r.status} ${(await r.text()).slice(0, 200)}`);
     }
-  } catch { /* lookup failure = not entitled; the short cache self-heals */ }
+  } catch (e) { console.error("revenuecat lookup threw", String(e)); /* not entitled; the short cache self-heals */ }
   await env.QUOTA.put(cacheKey, plan, { expirationTtl: plan === "pro" ? 3600 : 300 });
   return plan;
 }
