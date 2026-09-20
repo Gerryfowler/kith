@@ -31,8 +31,8 @@ let DB=loadDB();
 /* ---------- model constants ---------- */
 const TIERS={
   inner:{label:"Inner",    cadence:7,  halflife:14,  weight:1.2, rhythm:"weekly",    remind:14}, // every week; reminders only after 2 weeks
-  invest:{label:"Close",    cadence:30, halflife:40,  weight:1.5, rhythm:"monthly",   remind:42}, // every month; reminders after 6 weeks
-  warm:{label:"Friendly",  cadence:90, halflife:110, weight:0.7, rhythm:"quarterly", remind:120}, // every quarter; reminders after 4 months
+  invest:{label:"Close",    cadence:30, halflife:40,  weight:1.5, rhythm:"monthly",   remind:30}, // every month; reminders from the last third (~day 20)
+  warm:{label:"Friendly",  cadence:90, halflife:110, weight:0.7, rhythm:"quarterly", remind:90}, // every quarter; reminders from the last third (~day 60)
   notnow:{label:"Archived",    cadence:0,  halflife:0,  weight:0}
 };
 const CHANNELS={inperson:{label:"In person",base:10},call:{label:"Call",base:5},message:{label:"Message",base:2}};
@@ -806,8 +806,8 @@ function renderHome(){
   }));
 }
 
-// A person is worth a reminder only in the LAST THIRD of their circle's reminder window
-// (Inner 14d → from day 9, Close 42d → from day 28, Friendly 120d → from day 80), or if you've never spoken.
+// Reminders start in the LAST THIRD of the circle's rhythm (Close monthly → from day 20, Friendly quarterly → from day 60),
+// except Inner, where they only start once two full weeks have passed. Never-contacted people are eligible straight away.
 function reminderWindow(p){ const t=TIERS[p.tier]; return t&&t.cadence?(t.remind||t.cadence):0; }
 function eligibleForReminder(p, now){
   const w=reminderWindow(p); if(!w) return null;
@@ -815,7 +815,8 @@ function eligibleForReminder(p, now){
   const last=lastContact(p,now);
   if(!last) return {last:null, days:p.added?(now-p.added)/DAY:0, frac:1, never:true};
   const days=(now-last)/DAY, frac=days/w;
-  return frac>=2/3 ? {last, days, frac, never:false} : null;
+  const startAt=p.tier==="inner"?1:2/3;
+  return frac>=startAt ? {last, days, frac, never:false} : null;
 }
 function suggestions(){
   const now=Date.now(), out=[];
@@ -1948,20 +1949,20 @@ switchPage("home");
 
 /* ---------- first-run welcome ---------- */
 const CIRCLE_GUIDE=[
-  {k:"inner", n:"≈5", who:"the people you'd drop everything for", rhythm:"every week", remind:"a fortnight"},
-  {k:"invest", n:"≈15", who:"good friends you want to keep building", rhythm:"every month", remind:"six weeks"},
-  {k:"warm", n:"≈50", who:"people you'd hate to lose touch with", rhythm:"every quarter", remind:"four months"}
+  {k:"inner", n:"≈5", who:"the people you'd drop everything for", rhythm:"every week", remind:"two weeks"},
+  {k:"invest", n:"≈15", who:"good friends you want to keep building", rhythm:"every month", remind:"about three weeks"},
+  {k:"warm", n:"≈50", who:"people you'd hate to lose touch with", rhythm:"every quarter", remind:"about two months"}
 ];
 function circlesHtml(){
   return CIRCLE_GUIDE.map(c=>`<div class="factline" style="font-size:14px;align-items:center"><span class="fk"><i style="display:inline-block;width:12px;height:12px;border-radius:50%;background:var(--ring${CIRCLE_GUIDE.indexOf(c)+1})"></i></span>
-    <span><b>${TIERS[c.k].label}</b> · ${c.n} people · ${c.who}. Aim to talk <b>${c.rhythm}</b>; Samvar nudges you once it's been ${c.remind}.</span></div>`).join("");
+    <span><b>${TIERS[c.k].label}</b> · ${c.n} people · ${c.who}. Aim to talk <b>${c.rhythm}</b>; reminders start once it's been ${c.remind}.</span></div>`).join("");
 }
 function circlesInfoSheet(){
   const dlg=document.createElement("dialog");
   dlg.innerHTML=`<h2 style="font-size:18px;margin-bottom:4px">Your circles</h2>
     <p class="hint" style="margin:0 0 10px">Three circles, three rhythms. Fill them from Contacts and Samvar keeps the rhythm for you.</p>
     ${circlesHtml()}
-    <p class="hint" style="margin-top:10px">Someone only appears in “Next up” once they're in the last stretch of their rhythm, or if you've never spoken. Every conversation you log counts the same, whoever reached out.</p>
+    <p class="hint" style="margin-top:10px"><b>When reminders start:</b> in the last third of the rhythm — Close from about day 20 of the month, Friendly from about month two of the quarter — except Inner, where they only start once two full weeks have passed. Anyone you've never logged a conversation with can come up straight away. Every conversation you log counts the same, whoever reached out.</p>
     <div style="display:flex;gap:8px;margin-top:12px"><button class="btn small" id="ciDone">Got it</button><button class="btn ghost small" id="ciReplay">Replay the intro</button></div>`;
   document.body.appendChild(dlg); dlg.showModal();
   dlg.querySelector("#ciDone").addEventListener("click",()=>{ dlg.close(); dlg.remove(); });
