@@ -10,7 +10,10 @@ let memStore=null;
 function migrate(db){
   db.candidates=(db.candidates||[]).map(c=>typeof c==="string"?{name:c}:c);
   db.geo=db.geo||{};
-  (db.interactions||[]).forEach(x=>{ if(x.depth>3) x.depth=3; if(x.channel==="video") x.channel="call"; }); // old "Deep" → Substantive; old "Video" → Call
+  (db.interactions||[]).forEach(x=>{ if(x.channel==="video") x.channel="call"; }); // old "Video" → Call
+  db.settings=db.settings||{};
+  if(!db.settings.depthV2){ // old 3-level richness (logistical/friendly/substantive/deep) → quick catch-up (1) / quality time (2)
+    (db.interactions||[]).forEach(x=>{ x.depth=(x.depth>=3)?2:1; }); db.settings.depthV2=true; }
   db.settings=Object.assign({weekGoal:3,nudgeFreq:"daily",nudgeTime:"09:00"},db.settings||{});
   return db;
 }
@@ -33,10 +36,10 @@ const TIERS={
   notnow:{label:"Not now",     cadence:0,  halflife:0,  weight:0}
 };
 const CHANNELS={inperson:{label:"In person",base:10},call:{label:"Call",base:5},message:{label:"Message",base:2}};
+// Two kinds of interaction. Multipliers keep the old "friendly"/"substantive" weights so scores don't jump.
 const DEPTHS=[
-  {n:1,label:"Logistical",mult:1},
-  {n:2,label:"Friendly",mult:2.5},
-  {n:3,label:"Substantive",mult:5}
+  {n:1,label:"Quick catch-up",mult:2.5},
+  {n:2,label:"Quality time",mult:5}
 ];
 const INITS={me:{label:"I did",mult:1.5},mutual:{label:"Planned",mult:1.2},them:{label:"They did",mult:1.0}};
 const DAY=86400000;
@@ -85,7 +88,7 @@ function windowStats(asOf, days){
   const xs=DB.interactions.filter(x=>x.ts>from && x.ts<=asOf);
   const n=xs.length;
   const initMe=xs.filter(x=>x.initiator==="me").length;
-  const deepShare = n? xs.filter(x=>x.depth>=3).length/n : 0;
+  const deepShare = n? xs.filter(x=>x.depth>=2).length/n : 0;
   return {n, initRatio: n? initMe/n : 0, deepShare, xs};
 }
 function connectionScore(asOf){
@@ -123,9 +126,7 @@ function findPeopleInText(text){
   return hits;
 }
 const DEPTH_CUES=[
-  {re:/\b(deep|meaningful|heart[- ]to[- ]heart|opened up|emotional|vulnerab|really connected|profound|proper|substantive|long (chat|talk|call)|good (long )?(chat|talk|conversation)|advice|talked (about|through)|discussed|career|worri|problem)\b/i, d:3},
-  {re:/\b(catch[- ]?up|caught up|social|friendly|drinks|coffee|banter|chat|lunch|dinner|walk)\b/i, d:2},
-  {re:/\b(logistic|quick|admin|schedul|transactional|arrang|confirm|brief)\b/i, d:1}
+  {re:/(deep|meaningful|heart[- ]to[- ]heart|opened up|emotional|vulnerab|really connected|profound|proper|substantive|long (chat|talk|call|walk|lunch|dinner|evening)|good (long )?(chat|talk|conversation)|advice|talked (about|through)|discussed|career|worri|problem|dinner|lunch|weekend|day out|hours)/i, d:2}
 ];
 const INIT_ME=/\b(i (called|rang|phoned|messaged|texted|emailed|invited|organised|organized|arranged|reached out|suggested|set (it )?up)|my (idea|suggestion|invite)|i initiated)\b/i;
 const INIT_THEM=/\b((s?he|they) (called|rang|phoned|messaged|texted|emailed|invited|organised|organized|arranged|reached out|suggested|set (it )?up)|called me|rang me|texted me|messaged me|invited me|reached out to me|(his|her|their) (idea|suggestion|invite))\b/i;
@@ -136,7 +137,7 @@ const CHAN_CUES=[
   {re:/\b(text|whatsapp|message|emailed|email|dm|voice note)\b/i, c:"message"}
 ];
 function parseSegment(seg){
-  let depth=2, channel="inperson", initiator="mutual";
+  let depth=1, channel="inperson", initiator="mutual";
   for(const c of DEPTH_CUES){ if(c.re.test(seg)){ depth=c.d; break; } }
   for(const c of CHAN_CUES){ if(c.re.test(seg)){ channel=c.c; break; } }
   if(INIT_ME.test(seg)) initiator="me"; else if(INIT_THEM.test(seg)) initiator="them";
@@ -246,7 +247,7 @@ Each object:
 {"people":[names matched EXACTLY from the known-people list],
  "new_people":[names mentioned but NOT in the known list],
  "initiator":"me"|"them"|"mutual",  // from the note-writer's perspective; "mutual" for planned/recurring/unclear
- "depth":1|2|3,  // 1=logistical (admin, scheduling, transactions); 2=friendly (light catch-up, banter, pleasant social contact); 3=substantive (real topics discussed properly — advice, plans, worries, emotions, meaning)
+ "depth":1|2,  // 1=quick catch-up (a message, a short call, light banter, logistics); 2=quality time (a proper conversation or time spent together — a meal, a walk, an evening, real topics discussed)
  "channel":"inperson"|"call"|"message",  // video calls count as "call"
  "date":"YYYY-MM-DD",  // resolve 'yesterday', 'last night', 'this morning', weekday names, relative to today's date given
  "place":"place mentioned in the note (restaurant, area, town) or empty string",
@@ -351,7 +352,7 @@ async function aiParse(text){
     return {id:uid(), ai:true, note:o.summary||text.slice(0,120), personIds, pendingNames, facts,
       place:String(o.place||"").slice(0,80),
       initiator:INITS[o.initiator]?o.initiator:"mutual",
-      depth:Math.min(3,Math.max(1,+o.depth||2)),
+      depth:Math.min(2,Math.max(1,+o.depth||1)),
       channel:o.channel==="video"?"call":(CHANNELS[o.channel]?o.channel:"inperson"), ts};
   });
 }
@@ -394,11 +395,11 @@ function sparkline(el, series){
 
 function depthMixBar(el, legendEl){
   const s=windowStats(Date.now(),30);
-  const counts=[0,0,0];
-  s.xs.forEach(x=>counts[Math.min(3,x.depth)-1]++);
+  const counts=[0,0];
+  s.xs.forEach(x=>counts[Math.min(2,x.depth)-1]++);
   const total=counts.reduce((a,b)=>a+b,0);
   if(!total){ el.innerHTML=`<div class="empty" style="padding:10px">No interactions logged in the last 30 days yet.</div>`; legendEl.innerHTML=""; return; }
-  const colors=["var(--d1)","var(--d2)","var(--d3)"];
+  const colors=["var(--d2)","var(--d3)"];
   const W=600,H=34;
   let acc=0, segs="";
   const segData=[];
@@ -472,7 +473,7 @@ function editInteraction(id){
       <span class="chip" style="background:transparent"><input type="text" id="eadd" placeholder="+ add name" style="border:none;background:none;width:90px;padding:2px;font-size:14px"></span></div></div>
     <div class="fld"><label>Who initiated</label><div class="seg" data-eset="initiator">
       ${Object.entries(INITS).map(([k,v])=>`<button data-v="${k}" class="${x.initiator===k?"on":""}">${v.label}</button>`).join("")}</div></div>
-    <div class="fld"><label>Richness</label><div class="seg" data-eset="depth">
+    <div class="fld"><label>Type</label><div class="seg" data-eset="depth">
       ${DEPTHS.map(v=>`<button data-v="${v.n}" class="${x.depth===v.n?"on":""}">${v.label}</button>`).join("")}</div></div>
     <div class="fld"><label>Channel</label><div class="seg" data-eset="channel">
       ${Object.entries(CHANNELS).map(([k,v])=>`<button data-v="${k}" class="${x.channel===k?"on":""}">${v.label}</button>`).join("")}</div></div>
@@ -533,7 +534,7 @@ function editInteraction(id){
 /* ---------- weekly goal & streak ---------- */
 function weekGoal(){ return DB.settings.weekGoal||3; } // meaningful (substantive) conversations per week
 function weekStart(ts){ const d=new Date(ts); const dow=(d.getDay()+6)%7; d.setHours(0,0,0,0); return d.getTime()-dow*DAY; }
-function meaningfulCount(ws){ return DB.interactions.filter(x=>x.ts>=ws && x.ts<ws+7*DAY && x.depth>=3).length; }
+function meaningfulCount(ws){ return DB.interactions.filter(x=>x.ts>=ws && x.ts<ws+7*DAY && x.depth>=2).length; }
 function streakData(){
   const G=weekGoal(), nowWs=weekStart(Date.now());
   const cur=meaningfulCount(nowWs);
@@ -756,7 +757,7 @@ function nudges(){
   const yourTurn=core.find(p=>{ const xs=history(p); return xs.length>=2 && xs[0].initiator==="them" && xs[1].initiator==="them"; });
   if(yourTurn) out.push({kind:"yourturn", key:"yourturn:"+yourTurn.id, p:yourTurn, urgency:0.9,
     why:`${esc(capName(yourTurn))} reached out the last two times — your turn to initiate.`});
-  const deepen=core.find(p=>{ const xs=history(p).slice(0,3); return xs.length===3 && xs.every(x=>x.depth<=2); });
+  const deepen=core.find(p=>{ const xs=history(p).slice(0,3); return xs.length===3 && xs.every(x=>x.depth<2); });
   if(deepen) out.push({kind:"deepen", key:"deepen:"+deepen.id, p:deepen, urgency:0.7,
     why:`Your last three chats with ${esc(capName(deepen))} were light. Make the next one count — ask about something that matters to them.`});
   for(const p of DB.people){
@@ -864,7 +865,7 @@ function sendMessage(p,text){
   alert(`Copied — no phone number saved for ${capName(p)}, so paste it wherever you two chat.`);
 }
 function logMessageSent(p,text){
-  DB.interactions.push({id:uid(),ts:Date.now(),personIds:[p.id],initiator:"me",depth:2,channel:"message",note:text.slice(0,120),place:""});
+  DB.interactions.push({id:uid(),ts:Date.now(),personIds:[p.id],initiator:"me",depth:1,channel:"message",note:text.slice(0,120),place:""});
   delete p.snoozeUntil; saveDB(); renderAll();
 }
 async function openerSheet(p,opts={}){
@@ -902,21 +903,36 @@ async function openerSheet(p,opts={}){
 
 /* ---------- weekly reflection (shown Sunday & Monday) ---------- */
 function renderReflection(){
-  const el=document.getElementById("reflect"), dow=new Date().getDay();
-  if(dow!==0 && dow!==1){ el.innerHTML=""; return; }
-  const ws=dow===0?weekStart(Date.now()):weekStart(Date.now()-7*DAY), key="reflect:"+ws;
+  const el=document.getElementById("reflect");
+  const ws=weekStart(Date.now()), key="encourage:"+ws;
+  if(dismissed(key)){ el.innerHTML=""; return; }
   const xs=DB.interactions.filter(x=>x.ts>=ws && x.ts<ws+7*DAY);
-  if(dismissed(key) || !xs.length){ el.innerHTML=""; return; }
-  const meaningful=xs.filter(x=>x.depth>=3).length, mine=xs.filter(x=>x.initiator==="me").length;
-  const counts={}; xs.forEach(x=>x.personIds.forEach(id=>{ counts[id]=(counts[id]||0)+1; }));
-  const topId=Object.keys(counts).sort((a,b)=>counts[b]-counts[a])[0], top=DB.people.find(p=>p.id===topId);
-  const people=Object.keys(counts).length;
+  const quality=xs.filter(x=>x.depth>=2), mine=xs.filter(x=>x.initiator==="me").length;
+  const named=ids=>[...new Set(ids)].map(id=>DB.people.find(p=>p.id===id)).filter(Boolean);
+  const qNames=named(quality.flatMap(x=>x.personIds)).slice(0,2).map(p=>capName(p));
+  const dow=new Date().getDay(), early=dow>=1&&dow<=3;
+  // a warm read on the week so far
+  let line;
+  if(!DB.people.length) line="Add a few people and Samvar will start noticing who you'd love to hear from.";
+  else if(!xs.length) line=early?"Fresh week. One message today is all it takes to get it moving.":"A quiet week so far — that's fine. Pick one person below and send something small.";
+  else if(quality.length) line=`Quality time with ${qNames.join(" and ")} this week 💛${mine?` — and you started ${mine} of ${xs.length}.`:"."} Keep that going.`;
+  else line=`${xs.length} catch-up${xs.length===1?"":"s"} so far this week — nice. A longer chat with someone would make it a great one.`;
+  // one concrete, doable suggestion with a "how"
+  const n=nudges().find(x=>x.p), p=n&&n.p, t=p&&TIERS[p.tier];
+  let how="";
+  if(p){
+    const fact=(p.facts||[]).slice(-1)[0];
+    const hook=fact?` Ask about ${esc(fact.f.replace(/^birthday /i,"their birthday "))}.`:"";
+    const way=p.tier==="inner"?"a call, or fix a time to see them":p.tier==="invest"?"a message with a real question":"a quick hello";
+    const since=n.last?`it's been ${fmtAgo(n.last)}`:"you haven't logged a conversation yet";
+    how=`<div class="why" style="margin-top:8px"><b>Try this:</b> ${esc(capName(p))} — ${since}. Go for ${way}.${hook}</div>`;
+  }
   el.innerHTML=`<div class="card t-mint">
-    <div class="lbl" style="font-size:12px;color:var(--ink-2);font-weight:600;text-transform:uppercase;letter-spacing:.05em">${dow===0?"This week":"Last week"} in review</div>
-    <div style="font-size:15px;margin-top:6px;line-height:1.5"><b>${xs.length}</b> conversation${xs.length===1?"":"s"} with <b>${people}</b> ${people===1?"person":"people"} · <b>${meaningful}</b> meaningful · you started <b>${mine}</b>${top?` · most time with <b>${esc(capName(top))}</b>`:""}</div>
-    <div class="why" style="margin-top:6px">${mine/xs.length<0.4?"Try initiating a couple more next week.":"Good balance of initiating."}</div>
-    <button class="btn ghost small" id="reflectOk" style="margin-top:10px">Got it</button></div>`;
-  el.querySelector("#reflectOk").addEventListener("click",()=>{ dismiss(key,8); renderAll(); });
+    <div class="lbl" style="font-size:12px;color:var(--ink-2);font-weight:600;text-transform:uppercase;letter-spacing:.05em">This week</div>
+    <div style="font-size:15px;margin-top:6px;line-height:1.5">${line}</div>${how}
+    <div style="display:flex;gap:8px;margin-top:10px">${p?`<button class="btn small" id="reflectGo">✨ Draft an opener</button>`:""}<button class="btn ghost small" id="reflectOk">Got it</button></div></div>`;
+  el.querySelector("#reflectGo")?.addEventListener("click",()=>{ if(!entitled()){ paywallSheet("Openers are part of Samvar — start your free trial."); return; } openerSheet(p,{}); });
+  el.querySelector("#reflectOk").addEventListener("click",()=>{ dismiss(key,3); renderAll(); });
 }
 
 /* ---------- nudge notification text & schedule (used by the native shell) ---------- */
@@ -1038,9 +1054,8 @@ function personSheet(pid){
       <div class="meta">${INITS[x.initiator].label} · ${fmtAgo(x.ts)}${x.place?` · 📍 ${esc(x.place)}`:""}${x.note?` — ${esc(x.note.slice(0,90))}`:""}</div></div>
       <div class="spacer"></div><button class="xdel" data-xdel="${x.id}">✕</button></div>`).join("")
       :`<div class="empty">No interactions logged yet.</div>`}
-    <div style="display:flex;gap:8px;margin-top:12px">
-      <button class="btn small" id="dlgClose">Done</button>
-      <button class="btn danger small" id="dlgDel">Remove person</button></div>`;
+    <button class="btn" id="dlgClose" style="width:100%;margin-top:14px;padding:14px;font-size:17px">Done</button>
+    <div style="text-align:center;margin-top:10px"><button class="btn ghost small" id="dlgDel" style="color:var(--critical);font-size:12px;padding:4px 8px">Remove person</button></div>`;
   document.body.appendChild(dlg); dlg.showModal(); hydratePhotos(dlg);
   dlg.querySelector("#pphoto").addEventListener("click",async ()=>{ const ref=await choosePhoto(); if(!ref) return; await removePhoto(p.photo); p.photo=ref; saveDB(); dlg.close(); dlg.remove(); renderAll(); personSheet(pid); });
   dlg.querySelector("#pphotoRm")?.addEventListener("click",async ()=>{ await removePhoto(p.photo); p.photo=undefined; saveDB(); dlg.close(); dlg.remove(); renderAll(); personSheet(pid); });
@@ -1106,7 +1121,7 @@ function renderDrafts(){
         <span class="chip" style="background:transparent"><input type="text" data-addperson="${di}" placeholder="+ add name" style="border:none;background:none;width:90px;padding:2px;font-size:14px"></span></div></div>
       <div class="fld"><label>Who initiated</label><div class="seg" data-set="initiator" data-di="${di}">
         ${Object.entries(INITS).map(([k,v])=>`<button data-v="${k}" class="${d.initiator===k?"on":""}">${v.label}</button>`).join("")}</div></div>
-      <div class="fld"><label>Richness</label><div class="seg" data-set="depth" data-di="${di}">
+      <div class="fld"><label>Type</label><div class="seg" data-set="depth" data-di="${di}">
         ${DEPTHS.map(v=>`<button data-v="${v.n}" class="${d.depth===v.n?"on":""}">${v.label}</button>`).join("")}</div></div>
       <div class="fld"><label>Channel</label><div class="seg" data-set="channel" data-di="${di}">
         ${Object.entries(CHANNELS).map(([k,v])=>`<button data-v="${k}" class="${d.channel===k?"on":""}">${v.label}</button>`).join("")}</div></div>
@@ -1338,32 +1353,13 @@ document.getElementById("candAdd").addEventListener("click",()=>{
   const ta=document.getElementById("candPaste");
   addCandidates(ta.value.split(/\n/)); ta.value="";
 });
-document.getElementById("vcfFile").addEventListener("change",e=>{
-  const f=e.target.files[0]; if(!f) return;
-  f.text().then(txt=>{
-    const items=txt.split(/BEGIN:VCARD/i).slice(1).map(bk=>{
-      const fn=(bk.match(/^FN[^:]*:(.+)$/m)||[])[1]; if(!fn) return null;
-      const adrs=[...bk.matchAll(/^(?:item\d+\.)?ADR([^:]*):(.+)$/gm)];
-      const adr=adrs.find(m=>/HOME/i.test(m[1]))||adrs[0];
-      let addr;
-      if(adr){ const fld=adr[2].split(";").map(s=>s.replace(/\\,/g,",").trim());
-        addr=[fld[3],fld[5]].filter(Boolean).join(" ")||[fld[2],fld[4],fld[6]].filter(Boolean).join(", "); }
-      const tels=[...bk.matchAll(/^(?:item\d+\.)?TEL([^:]*):(.+)$/gm)];
-      const tel=(tels.find(m=>/CELL|MOBILE|IPHONE/i.test(m[1]))||tels[0])?.[2].trim();
-      return {name:fn.trim(), addr:addr||undefined, tel:tel||undefined};
-    }).filter(Boolean);
-    const added=addCandidates(items);
-    alert(`${added} contacts added to “To file”${items.some(i=>i.addr)?" (addresses included)":""}.`); switchPage("people");
-  });
-});
-document.getElementById("vcfBtn2").addEventListener("click",()=>document.getElementById("vcfFile").click());
 document.getElementById("icsBtn").addEventListener("click",exportICS);
 document.getElementById("geoAllBtn").addEventListener("click",async ()=>{
   const all=[...DB.people,...DB.candidates];
   const withAddr=all.filter(x=>x.addr);
   const todo=withAddr.filter(x=>!x.loc);
   const prog=document.getElementById("geoProg");
-  if(!withAddr.length){ prog.textContent="No one has an address yet — add one on a person's profile, or import a .vcf with addresses."; return; }
+  if(!withAddr.length){ prog.textContent="No one has an address yet — add one on a person's profile."; return; }
   if(!todo.length){ prog.textContent=`✓ All ${withAddr.length} address${withAddr.length===1?" is":"es are"} already mapped — nothing to do.`; return; }
   const btn=document.getElementById("geoAllBtn"); btn.disabled=true;
   let done=0, found=0; const failed=[];
@@ -1404,9 +1400,9 @@ if(navigator.contacts && navigator.contacts.select){
       if(added){
         const withAddr=items.filter(i=>i.addr).length;
         if(props.includes("address") && !withAddr)
-          alert(added+" added to triage — but Safari's contact picker didn't hand over any addresses (Apple's experimental picker usually only shares names). You can add an address on each person's profile, or import a .vcf file which carries full addresses.");
+          alert(added+" added to triage — but Safari's contact picker didn't hand over any addresses (Apple's experimental picker usually only shares names). You can add an address on each person's profile.");
         else if(!props.includes("address"))
-          alert(added+" added to triage. This browser's picker doesn't share addresses at all — add them on each person's profile, or import a .vcf file.");
+          alert(added+" added to triage. This browser's picker doesn't share addresses at all — add them on each person's profile.");
         else alert(added+" added to “To file” ("+withAddr+" with addresses).");
         switchPage("people");
       }

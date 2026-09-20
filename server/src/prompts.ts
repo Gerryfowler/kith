@@ -4,7 +4,7 @@ Each object:
 {"people":[names matched EXACTLY from the known-people list],
  "new_people":[names mentioned but NOT in the known list],
  "initiator":"me"|"them"|"mutual",  // from the note-writer's perspective; "mutual" for planned/recurring/unclear
- "depth":1|2|3,  // 1=logistical (admin, scheduling, transactions); 2=friendly (light catch-up, banter, pleasant social contact); 3=substantive (real topics discussed properly — advice, plans, worries, emotions, meaning)
+ "depth":1|2,  // 1=quick catch-up (a message, a short call, light banter, logistics); 2=quality time (a proper conversation or time spent together — a meal, a walk, an evening, real topics discussed)
  "channel":"inperson"|"call"|"message",  // video calls (FaceTime, Zoom, Teams) count as "call"
  "date":"YYYY-MM-DD",  // resolve 'yesterday', 'last night', 'this morning', weekday names, relative to today's date given
  "place":"place mentioned in the note (restaurant, area, town) or empty string",

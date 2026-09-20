@@ -74,7 +74,6 @@
         </div>
         <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
           <button class="btn ghost small" id="pickContacts" style="display:none">📇 Pick from Contacts</button>
-          <button class="btn ghost small" id="vcfBtn2">Import contacts file (.vcf)</button>
         </div>
         <p class="hint" id="contactsHint">Imported names appear below in “To file”, where you place each one in a circle.</p>
         <details style="margin-top:8px">
@@ -141,7 +140,7 @@
       <h2 style="font-size:17px">Insights — last 30 days</h2>
       <div class="tile-row" style="margin-top:10px">
         <div class="tile"><div class="lbl">Initiation</div><div class="val" id="initVal">–</div><div class="sub">started by you</div></div>
-        <div class="tile"><div class="lbl">Depth</div><div class="val" id="depthVal">–</div><div class="sub">substantive</div></div>
+        <div class="tile"><div class="lbl">Quality time</div><div class="val" id="depthVal">–</div><div class="sub">of conversations</div></div>
       </div>
       <div class="lbl" style="font-size:12px;color:var(--ink-2);font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-top:14px">Depth mix</div>
       <div id="depthBar" style="margin-top:8px"></div>
@@ -153,7 +152,6 @@
       <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
         <button class="btn secondary small" id="exportBtn">Download backup</button>
         <label class="btn ghost small" style="display:inline-flex;align-items:center">Import backup<input type="file" id="importFile" accept=".json" hidden></label>
-        <label class="btn ghost small" style="display:inline-flex;align-items:center">Import contacts (.vcf)<input type="file" id="vcfFile" accept=".vcf,text/vcard" hidden></label>
       </div>
     </div>
     <div class="card">
@@ -186,7 +184,7 @@
     </div>
     <div class="card">
       <h2 style="font-size:17px">How scoring works</h2>
-      <p class="hint">Each interaction earns smiles: <b>channel</b> (in-person 10 · call 5 · message 2) × <b>richness</b> (logistical ×1 · friendly ×2.5 · substantive ×5) × <b>initiation</b> (you ×1.5 · mutual ×1.2 · them ×1). Every person’s balance then <b>decays daily</b> — faster for closer circles — so the score genuinely goes backwards when you go quiet. The headline score blends circle coverage (50%), depth mix (20%), initiation (15%) and volume (15%).</p>
+      <p class="hint">Every conversation earns smiles: <b>how</b> (in person 10 · call 5 · message 2) × <b>type</b> (quick catch-up ×2.5 · quality time ×5) × <b>who reached out</b> (you ×1.5 · planned ×1.2 · them ×1). Each person’s smiles then <b>fade a little every day</b> — faster for closer circles — so the score genuinely slips when you go quiet. The headline score blends how many of your people are in rhythm (50%), the share of quality time (20%), how often you reach out first (15%) and how much you talk overall (15%).</p>
     </div>
     <div class="card">
       <button class="btn danger" id="wipeBtn">Erase all data</button>
