@@ -1579,6 +1579,37 @@ document.querySelector("header.app h1").addEventListener("click",()=>{
 });
 /* API key save + live test (developer mode only) */
 document.getElementById("apiKey").value=getApiKey();
+// Dev mode only: realistic sample data for screenshots and demos.
+document.getElementById("demoBtn")?.addEventListener("click",()=>{
+  if(!confirm("Replace everything on this device with demo data?")) return;
+  const D=DAY, now=Date.now(), P=[];
+  const mk=(name,tier,addr,facts,extra)=>{ const p=Object.assign({id:uid(),name,tier,aliases:[],added:now-80*D,addr,facts:(facts||[]).map(f=>({f:f[0],kind:f[1],ts:now-30*D})),tel:"+44 7700 900"+String(100+P.length),telIsMobile:true},extra||{}); P.push(p); return p; };
+  const kate=mk("Kate Bell","inner","14 Clifton Road\nBristol\nBS8 1AB\nUnited Kingdom",[["birthday 22 June","date"],["daughter Iris starting secondary school in September","family"],["moving to Bristol in March","other"]],{company:"BBC",role:"Producer"});
+  const sam=mk("Sam Ortiz","inner","Clapham\nLondon\nSW4",[["birthday 3 March","date"],["training for the Brighton half marathon","other"],["partner Lena","family"]]);
+  const priya=mk("Priya Nair","inner","Didsbury\nManchester",[["birthday 11 November","date"],["new job at a design studio","work"]],{company:"Studio North",role:"Designer"});
+  const tom=mk("Tom Walsh","invest","Leith\nEdinburgh",[["son Rory just turned two","family"],["renovating the kitchen","other"]]);
+  const amara=mk("Amara Okafor","invest","Brooklyn\nNew York\nUSA",[["birthday 9 April","date"],["just got a puppy called Biscuit","family"]]);
+  const jonas=mk("Jonas Weber","invest","Kreuzberg\nBerlin\nGermany",[["starting a PhD in October","work"]]);
+  const mei=mk("Mei Tanaka","invest","Shoreditch\nLondon",[["birthday 28 September","date"],["planning a trip to Kyoto","other"]]);
+  const dave=mk("Dave Hughes","warm","Cardiff",[["coaches his daughter's football team","family"]]);
+  const rosa=mk("Rosa Alvarez","warm","Seville\nSpain",[["opened a bakery","work"]]);
+  const ben=mk("Ben Carter","warm","Bath",[["birthday 15 January","date"]]);
+  const lucy=mk("Lucy Grant","warm","Oxford",[]);
+  const raj=mk("Raj Patel","warm","Leicester",[["running the London marathon in April","other"]]);
+  const X=[]; const log=(p,daysAgo,depth,channel,note,facts,ai)=>X.push({id:uid(),ts:now-daysAgo*D,personIds:[p.id],depth,channel,note,place:"",ai:!!ai,facts:(facts||[]).map(f=>({person:p.name,fact:f,kind:"other"}))});
+  log(kate,1,2,"inperson","Long lunch in Clifton, talked properly about the move and Iris's new school",["daughter Iris starting secondary school in September"],true);
+  log(kate,9,1,"message","Quick catch-up about weekend plans",[],true); log(kate,16,2,"call","Hour on the phone about her new role",[],true);
+  log(sam,3,1,"message","Checked in after his long run",[],true); log(sam,10,2,"inperson","Dinner at his place, met Lena",["partner Lena"],true); log(sam,24,1,"call","Short call about the marathon plan",[],false);
+  log(priya,5,2,"call","Proper catch-up about the design studio job",["new job at a design studio"],true); log(priya,20,1,"message","Sent her the podcast",[],false);
+  log(tom,17,2,"inperson","Weekend in Edinburgh, saw the new kitchen",[],true); log(tom,50,1,"message","Birthday message for Rory",[],false);
+  log(amara,12,1,"message","Puppy photos",[],true); log(amara,40,2,"call","Long video call about her move",[],true);
+  log(jonas,33,1,"message","Congratulated him on the PhD place",[],true);
+  log(mei,26,2,"inperson","Coffee in Shoreditch, Kyoto plans",["planning a trip to Kyoto"],true);
+  log(dave,45,1,"message","Football chat",[],false); log(rosa,70,2,"inperson","Visited the bakery in Seville",["opened a bakery"],true);
+  log(ben,58,1,"message","Happy birthday text",[],false); log(raj,35,1,"call","Marathon training chat",[],false);
+  DB.people=P; DB.interactions=X; DB.settings=Object.assign(DB.settings,{welcomed:true,nudgeSet:true,pro:{active:true,source:"appstore",trial:true,expires:now+5*D}});
+  saveDB(); renderAll(); switchPage("home");
+});
 document.getElementById("apiSave").addEventListener("click",async ()=>{
   const k=document.getElementById("apiKey").value.trim();
   const st=document.getElementById("apiStatus");
