@@ -1359,21 +1359,29 @@ async function contactsSheet(){
       <button class="btn ghost small" id="cCancel">Cancel</button><span class="hint" id="cProg"></span></div>`;
   document.body.appendChild(dlg); dlg.showModal(); setTimeout(()=>dlg.querySelector("#cSearch").blur(),0);
   const tiers=["inner","invest","warm"];
+  // Render the whole address book, 150 rows at a time as the list is scrolled (thousands of contacts stay smooth).
+  const listEl=dlg.querySelector("#cList"); let rows=[], shown=0;
+  const rowHtml=c=>{
+    const inApp=have.has(c.name.toLowerCase());
+    return `<div style="padding:8px 4px;border-bottom:1px solid var(--ring)"><div style="display:flex;align-items:center;gap:10px">${av(c.name)}<div style="min-width:0;flex:1"><div class="nm" style="font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(c.name)}</div>
+      <div class="meta" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${inApp?"already in Samvar":[c.tel,c.birthday?"🎂 "+c.birthday:""].filter(Boolean).join(" · ")||"&nbsp;"}</div></div></div>
+      ${inApp?"":`<div class="seg" style="margin:6px 0 0 50px;flex-wrap:nowrap">${tiers.map(t=>`<button data-cid="${esc(c.contactId)}" data-t="${t}" class="${pick[c.contactId]===t?"on":""}" style="flex:1;padding:7px 4px;font-size:13px">${TIERS[t].label}</button>`).join("")}</div>`}</div>`;
+  };
+  const bind=root=>root.querySelectorAll("[data-cid]").forEach(bt=>{ if(bt.dataset.bound) return; bt.dataset.bound="1"; bt.addEventListener("click",()=>{
+    const id=bt.dataset.cid; if(pick[id]===bt.dataset.t) delete pick[id]; else pick[id]=bt.dataset.t;
+    bt.parentElement.querySelectorAll("button").forEach(x=>x.classList.toggle("on",pick[id]===x.dataset.t));
+    const k=Object.keys(pick).length; const add=dlg.querySelector("#cAdd"); add.disabled=!k; add.textContent=`Add ${k} ${k===1?"person":"people"}`;
+  }); });
+  const more=()=>{ if(shown>=rows.length) return; const frag=document.createElement("div"); frag.innerHTML=rows.slice(shown,shown+150).map(rowHtml).join(""); shown+=150;
+    const sentinel=listEl.querySelector("#cMore"); if(sentinel) sentinel.remove();
+    while(frag.firstChild) listEl.appendChild(frag.firstChild);
+    if(shown<rows.length) listEl.insertAdjacentHTML("beforeend",`<div id="cMore" class="hint" style="text-align:center;padding:10px">${rows.length-shown} more… (scroll)</div>`);
+    bind(listEl); };
   const render=()=>{
     const q=dlg.querySelector("#cSearch").value.trim().toLowerCase();
-    const rows=list.filter(c=>!q||c.name.toLowerCase().includes(q)).slice(0,300);
-    dlg.querySelector("#cList").innerHTML=rows.map(c=>{
-      const inApp=have.has(c.name.toLowerCase());
-      return `<div style="padding:8px 4px;border-bottom:1px solid var(--ring)"><div style="display:flex;align-items:center;gap:10px">${av(c.name)}<div style="min-width:0;flex:1"><div class="nm" style="font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(c.name)}</div>
-        <div class="meta" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${inApp?"already in Samvar":[c.tel,c.birthday?"🎂 "+c.birthday:""].filter(Boolean).join(" · ")||"&nbsp;"}</div></div></div>
-        ${inApp?"":`<div class="seg" style="margin:6px 0 0 50px;flex-wrap:nowrap">${tiers.map(t=>`<button data-cid="${esc(c.contactId)}" data-t="${t}" class="${pick[c.contactId]===t?"on":""}" style="flex:1;padding:7px 4px;font-size:13px">${TIERS[t].label}</button>`).join("")}</div>`}</div>`;
-    }).join("")||`<div class="empty">No matches.</div>`;
-    dlg.querySelectorAll("[data-cid]").forEach(bt=>bt.addEventListener("click",()=>{
-      const id=bt.dataset.cid; if(pick[id]===bt.dataset.t) delete pick[id]; else pick[id]=bt.dataset.t;
-      bt.parentElement.querySelectorAll("button").forEach(x=>x.classList.toggle("on",pick[id]===x.dataset.t));
-      const k=Object.keys(pick).length; const add=dlg.querySelector("#cAdd"); add.disabled=!k; add.textContent=`Add ${k} ${k===1?"person":"people"}`;
-    }));
+    rows=list.filter(c=>!q||c.name.toLowerCase().includes(q)); shown=0; listEl.innerHTML=rows.length?"":`<div class="empty">No matches.</div>`; more();
   };
+  listEl.addEventListener("scroll",()=>{ if(listEl.scrollTop+listEl.clientHeight>=listEl.scrollHeight-200) more(); });
   render();
   dlg.querySelector("#cSearch").addEventListener("input",render);
   dlg.querySelector("#cCancel").addEventListener("click",()=>{ dlg.close(); dlg.remove(); });
