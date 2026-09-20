@@ -107,9 +107,17 @@ function connectionScore(asOf){
   return Math.round(raw);
 }
 function weeklySeries(weeks){
-  const now=Date.now(), out=[];
-  for(let i=weeks-1;i>=0;i--) out.push({t:now-i*7*DAY, v:connectionScore(now-i*7*DAY)});
-  return out;
+  // Starts at the first week with a logged conversation, so a new user sees one dot rather than a flat zero line.
+  const now=Date.now(), first=DB.interactions.length?Math.min(...DB.interactions.map(x=>x.ts)):now, out=[];
+  for(let i=weeks-1;i>=0;i--){ const t=now-i*7*DAY; if(t+7*DAY<first) continue; out.push({t, v:connectionScore(t)}); }
+  return out.length?out:[{t:now, v:connectionScore(now)}];
+}
+// What a good score looks like for this person's circles: everyone in rhythm, half the conversations quality time,
+// and the volume their rhythms imply (weekly Inner + monthly Close + quarterly Friendly), capped like the score itself.
+function targetScore(){
+  const ppl=DB.people.filter(p=>p.tier!=="notnow" && TIERS[p.tier]?.cadence); if(!ppl.length) return 0;
+  const monthly=ppl.reduce((a,p)=>a+30/TIERS[p.tier].cadence,0);
+  return Math.round(100*(0.55*1 + 0.25*0.5 + 0.20*Math.min(1, monthly/20)));
 }
 
 /* ---------- name matching & parsing ---------- */
@@ -363,17 +371,25 @@ function hideTip(){ tooltip.style.display="none"; }
 
 function sparkline(el, series){
   if(!series.length){ el.innerHTML=""; return; }
-  const W=220,H=56,P=6;
-  const vs=series.map(d=>d.v), min=Math.min(...vs,0), max=Math.max(...vs,10);
-  const x=i=>P+(W-2*P)*i/(series.length-1||1);
+  const W=220,H=80,P=6;
+  const T=targetScore(), vs=series.map(d=>d.v), min=0, max=Math.max(...vs, T?T*1.15:10, 10);
+  const one=series.length===1;
+  const x=i=>one?W-P:P+(W-2*P)*i/(series.length-1);
   const y=v=>H-P-(H-2*P)*((v-min)/((max-min)||1));
   const pts=series.map((d,i)=>`${x(i)},${y(d.v)}`).join(" ");
   const last=series[series.length-1];
+  // bands: below 60% of target (needs work) · approaching · at or above target
+  const bands=T?`<rect x="${P}" y="${y(max)}" width="${W-2*P}" height="${Math.max(0,y(T)-y(max))}" fill="var(--good)" opacity=".13"/>
+    <rect x="${P}" y="${y(T)}" width="${W-2*P}" height="${Math.max(0,y(0.6*T)-y(T))}" fill="var(--warn)" opacity=".12"/>
+    <rect x="${P}" y="${y(0.6*T)}" width="${W-2*P}" height="${Math.max(0,y(0)-y(0.6*T))}" fill="var(--critical)" opacity=".08"/>
+    <line x1="${P}" y1="${y(T)}" x2="${W-P}" y2="${y(T)}" stroke="var(--good)" stroke-width="1" stroke-dasharray="3 3" opacity=".7"/>
+    <text x="${P+2}" y="${Math.max(9,y(T)-3)}" font-size="9" fill="var(--good)">target ${T}</text>`:"";
   el.innerHTML=`<svg viewBox="0 0 ${W} ${H}" width="100%" style="touch-action:pan-y;pointer-events:none">
+    ${bands}
     <line x1="${P}" y1="${H-P}" x2="${W-P}" y2="${H-P}" stroke="var(--baseline)" stroke-width="1"/>
-    <polyline points="${pts}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+    ${one?"":`<polyline points="${pts}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`}
     <circle cx="${x(series.length-1)}" cy="${y(last.v)}" r="3.5" fill="var(--accent)" stroke="var(--tint-lav)" stroke-width="2"/>
-    <text x="${W-P}" y="10" text-anchor="end" font-size="10" fill="var(--muted)">12 wks</text>
+    <text x="${W-P}" y="10" text-anchor="end" font-size="10" fill="var(--muted)">${one?"week 1":series.length+" wks"}</text>
   </svg>`;
 }
 
