@@ -7,7 +7,7 @@
   // Capacitor.Plugins and has no registerPlugin. Fall back to registerPlugin only if a runtime provides it.
   const reg=n=>{ try{ if(Cap.Plugins&&Cap.Plugins[n]) return Cap.Plugins[n]; return Cap.registerPlugin?Cap.registerPlugin(n):null; }catch(e){ return null; } };
   const LocalNotifications=reg("LocalNotifications"), Contacts=reg("Contacts"), Purchases=reg("Purchases"),
-        Haptics=reg("Haptics"), Share=reg("Share"), App=reg("App"), StatusBar=reg("StatusBar"), Filesystem=reg("Filesystem"), Camera=reg("Camera"), Calendar=reg("CapacitorCalendar");
+        Haptics=reg("Haptics"), Share=reg("Share"), App=reg("App"), StatusBar=reg("StatusBar"), Filesystem=reg("Filesystem"), Camera=reg("Camera"), Calendar=reg("CapacitorCalendar"), Share2=reg("SamvarShare");
 
   function opts_askedCalendar(){ try{ return !!(DB.settings.welcomed && DB.people.length); }catch(e){ return false; } }
   const RC_IOS_KEY="appl_HRQlVTfaAsgwxnwRfnwRfEFtsaJ";
@@ -96,6 +96,8 @@
       return (r.result||[]).map(e=>({id:e.id, title:e.title||"", start:e.startDate, end:e.endDate, isAllDay:!!e.isAllDay, location:e.location||"",
         attendees:(e.attendees||[]).map(a=>a.name||"").filter(Boolean)}));
     },
+    async syncWidget(snapshot){ if(!Share2) return; try{ await Share2.setWidgetData({json:JSON.stringify(snapshot)}); }catch(e){} },
+    async drainIntents(){ if(!Share2) return; try{ const r=await Share2.takePendingIntents(); (r&&r.items||[]).forEach(applyPendingIntent); }catch(e){} },
     // source: "photos" | "camera". Returns base64 JPEG downscaled to 640px, or null if cancelled.
     async pickPhoto(source){
       if(!Camera) return null;
@@ -141,7 +143,9 @@
 
   if(StatusBar && StatusBar.setStyle) StatusBar.setStyle({style:document.documentElement.dataset.theme==="dark"?"DARK":"LIGHT"}).catch(()=>{});
   // Re-render and re-schedule on every foreground so notification text reflects today's nudges.
-  if(App && App.addListener) App.addListener("appStateChange",s=>{ if(s.isActive){ renderAll(); window.SamvarNative.scheduleNudges(); refreshCalendar(); syncContacts(); } });
+  if(App && App.addListener) App.addListener("appStateChange",s=>{ if(s.isActive){ window.SamvarNative.drainIntents().then(()=>{ renderAll(); window.SamvarNative.scheduleNudges(); refreshCalendar(); syncContacts(); }); } });
+  // Widget tap (samvar://today) and other deep links land on Today.
+  if(App && App.addListener) App.addListener("appUrlOpen",d=>{ if(d && /samvar:\/\//.test(d.url||"")) switchPage("home"); });
   if(LocalNotifications && LocalNotifications.addListener) LocalNotifications.addListener("localNotificationActionPerformed",ev=>handleNotificationTap(ev&&ev.notification&&ev.notification.extra));
 
   window.SamvarNative.refreshEntitlement().then(e=>{
@@ -153,4 +157,5 @@
   initNativeUI();
   refreshCalendar();
   setTimeout(syncContacts, 1500);
+  window.SamvarNative.drainIntents().then(()=>renderAll());
 })();

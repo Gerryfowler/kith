@@ -1910,7 +1910,24 @@ function switchPage(p){
   if(p==="people" && peopleView==="places") setTimeout(renderMap,80);
 }
 document.querySelectorAll("nav.tabs button").forEach(b=>b.addEventListener("click",()=>switchPage(b.dataset.p)));
-function renderAll(){ renderHome(); renderTriage(); renderPeople(); renderNetwork(); renderInsights(); renderSettingsUI(); renderCalendarSuggestions(); hydratePhotos(); }
+function renderAll(){ renderHome(); renderTriage(); renderPeople(); renderNetwork(); renderInsights(); renderSettingsUI(); renderCalendarSuggestions(); hydratePhotos(); scheduleWidgetSync(); }
+/* ---------- home-screen widget + Siri (native shell) ---------- */
+function widgetSnapshot(){
+  const pick=todaysPick(nudges()), st=dailyStreak();
+  const why=!pick?"Everyone's in rhythm — enjoy it":pick.overdue?`${fmtAgo(pick.last)} since you spoke — past your ${pick.t.rhythm} rhythm`
+    :`${Math.max(1,Math.round(pick.left))} day${Math.round(pick.left)===1?"":"s"} before they slip out of your ${pick.t.rhythm} rhythm`;
+  return {name:pick?pick.p.name:null, initials:pick?initials(pick.p.name):null, why, streak:st.streak, score:connectionScore(Date.now()), target:targetScore(), updated:Date.now()};
+}
+let widgetTimer=null;
+function scheduleWidgetSync(){ if(!window.SamvarNative?.syncWidget) return; clearTimeout(widgetTimer); widgetTimer=setTimeout(()=>window.SamvarNative.syncWidget(widgetSnapshot()),600); }
+// A conversation logged through Siri ("log that I called Kate"): match the name, file a quick catch-up.
+function applyPendingIntent(it){
+  const name=String(it.person||"").trim(); if(!name) return;
+  const p=DB.people.find(x=>x.name.toLowerCase()===name.toLowerCase())||fuzzyFind(name);
+  const chan=it.kind==="inperson"?"inperson":it.kind==="message"?"message":"call";
+  if(p){ DB.interactions.push({id:uid(),ts:+it.ts||Date.now(),personIds:[p.id],depth:1,channel:chan,note:"",place:"",via:"siri"}); delete p.snoozeUntil; saveDB(); renderAll(); }
+  else { switchPage("log"); const ta=document.getElementById("logText"); ta.value=`${chan==="call"?"Call":chan==="message"?"Message":"Catch-up"} with ${name} — `; ta.focus(); }
+}
 switchPage("home");
 
 /* ---------- first-run welcome ---------- */
