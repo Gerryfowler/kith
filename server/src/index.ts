@@ -106,6 +106,8 @@ export default {
   async fetch(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
     const url = new URL(req.url);
+    // Anything outside the API is the public site; static pages are served before this runs, so what's left is a 404.
+    if (!url.pathname.startsWith("/v1/")) return new Response("<!doctype html><meta charset=utf-8><meta http-equiv=refresh content=\"3;url=/\"><title>Not found</title><p style=\"font-family:system-ui;padding:40px\">Not found — taking you to <a href=/>samvar.app</a>.</p>", { status: 404, headers: { "content-type": "text/html; charset=utf-8" } });
     const device = bearer(req);
     if (!device) return json({ error: "unauthorised" }, 401);
 
