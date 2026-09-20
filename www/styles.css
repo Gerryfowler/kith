@@ -156,3 +156,8 @@ dialog.photoview::backdrop{background:#000}
 
 .avwrap{position:relative;width:60px;height:60px;flex:none}
 .avedit{position:absolute;right:-6px;bottom:-4px;width:24px;height:24px;border-radius:50%;border:1px solid var(--ring);background:var(--surface);color:var(--ink);font-size:12px;line-height:22px;padding:0;text-align:center;box-shadow:0 1px 3px rgba(0,0,0,.15);cursor:pointer}
+
+.mapx{position:absolute;top:10px;right:10px;z-index:500;width:36px;height:36px;border-radius:10px;border:1px solid var(--ring);background:var(--surface);color:var(--ink);font-size:18px;line-height:34px;text-align:center;padding:0;box-shadow:0 1px 4px rgba(0,0,0,.2);cursor:pointer}
+dialog.mapdlg{position:fixed;inset:0;width:100vw;max-width:100vw;height:100dvh;max-height:100dvh;margin:0;padding:calc(env(safe-area-inset-top) + 6px) 6px calc(env(safe-area-inset-bottom) + 6px);border:none;border-radius:0;background:var(--page);box-sizing:border-box;overflow:hidden}
+dialog.mapdlg #mapView{height:100%!important;border-radius:12px}
+dialog.mapdlg .mapx{top:calc(env(safe-area-inset-top) + 16px);right:16px;z-index:1000}

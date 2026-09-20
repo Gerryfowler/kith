@@ -1779,6 +1779,25 @@ function renderMap(){
   }
   kmap.fitBounds(L.latLngBounds(pts.map(p=>[p.loc.lat,p.loc.lon])).pad(0.3),{maxZoom:13});
   setTimeout(()=>kmap.invalidateSize(),80);
+  const xb=document.getElementById("mapExpand"); xb.style.display="";
+  xb.onclick=()=>toggleMapFull();
+}
+// Full-screen map: the map element is moved into a modal <dialog> (top layer, unaffected by card layout) and back.
+let mapFull=false;
+function toggleMapFull(){
+  const wrap=document.getElementById("mapWrap"), el=document.getElementById("mapView"), xb=document.getElementById("mapExpand");
+  const refit=()=>setTimeout(()=>{ if(!kmap) return; kmap.invalidateSize();
+    const pts=DB.people.filter(p=>p.loc&&p.tier!=="notnow"); if(pts.length) kmap.fitBounds(L.latLngBounds(pts.map(p=>[p.loc.lat,p.loc.lon])).pad(0.2),{maxZoom:14}); },80);
+  if(!mapFull){
+    const dlg=document.createElement("dialog"); dlg.className="mapdlg"; dlg.id="mapDlg";
+    dlg.innerHTML=`<button class="mapx" id="mapClose" title="Close map" aria-label="Close map">✕</button>`;
+    document.body.appendChild(dlg); dlg.insertBefore(el, dlg.firstChild); el.style.height="100%"; dlg.showModal(); mapFull=true;
+    dlg.querySelector("#mapClose").addEventListener("click",toggleMapFull);
+    dlg.addEventListener("cancel",ev=>{ ev.preventDefault(); toggleMapFull(); });
+    refit();
+  } else {
+    const dlg=document.getElementById("mapDlg"); wrap.insertBefore(el, xb); el.style.height="280px"; dlg.close(); dlg.remove(); mapFull=false; refit();
+  }
 }
 
 /* ---------- theme ---------- */
