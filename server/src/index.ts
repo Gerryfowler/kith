@@ -9,11 +9,12 @@ export interface Env {
   QUOTA: KVNamespace;
   MODEL: string;
   DAILY_CAP: string;
+  FREE_CALLS?: string;
   RC_ENTITLEMENT: string;
   ALLOW_UNENTITLED?: string; // "1" only in local dev without RevenueCat
 }
 
-type Plan = "pro" | "none";
+type Plan = "pro" | "free" | "none";
 
 const MAX_BODY = 8 * 1024;
 const CORS = {
@@ -104,13 +105,17 @@ export default {
     const device = bearer(req);
     if (!device) return json({ error: "unauthorised" }, 401);
 
-    const plan = await planFor(device, env);
+    let plan = await planFor(device, env);
+    // Before the trial: a small free allowance so the first people and conversations get the real AI.
+    const freeKey = `f:${device}`;
+    const freeUsed = plan === "pro" ? 0 : await count(env, freeKey);
+    if (plan !== "pro" && freeUsed < Number(env.FREE_CALLS || 12)) plan = "free";
     const meta = { "x-samvar-plan": plan };
 
     if (req.method === "GET" && url.pathname === "/v1/me") return json({ plan }, 200, meta);
     if (req.method !== "POST" || !["/v1/parse", "/v1/openers", "/v1/address"].includes(url.pathname)) return json({ error: "not found" }, 404);
 
-    if (plan !== "pro") return json({ error: "subscription required" }, 402, meta);
+    if (plan !== "pro" && plan !== ("free")) return json({ error: "subscription required" }, 402, meta);
     if (Number(req.headers.get("content-length") ?? 0) > MAX_BODY) return json({ error: "too large" }, 413, meta);
     const dayKeyFor = `d:${device}:${dayKey()}`;
     if ((await count(env, dayKeyFor)) >= Number(env.DAILY_CAP || 200)) return json({ error: "daily cap" }, 429, meta);
@@ -160,6 +165,7 @@ export default {
         out = (res.parsed_output?.openers ?? []).slice(0, 3);
       }
       ctx.waitUntil(bump(env, dayKeyFor, 2 * 86400));
+      if (plan === ("free")) ctx.waitUntil(bump(env, freeKey, 400 * 86400));
       return json(out, 200, meta);
     } catch (err) {
       console.error("ai call failed", url.pathname, err instanceof Error ? `${err.name}: ${err.message}` : String(err));

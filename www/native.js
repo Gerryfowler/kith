@@ -34,10 +34,9 @@
         const pending=await LocalNotifications.getPending();
         if(pending.notifications.length) await LocalNotifications.cancel({notifications:pending.notifications.map(n=>({id:n.id}))});
         if(perm.display!=="granted") return;
-        const times=nextNudgeTimes(14), t=nudgeText();
-        if(!times.length) return;
-        await LocalNotifications.schedule({notifications:times.map((at,i)=>({
-          id:1000+i, title:t.title, body:t.body, schedule:{at:new Date(at)}, sound:"default"}))});
+        const planned=plannedNotifications(); if(!planned.length) return;
+        await LocalNotifications.schedule({notifications:planned.map(n=>({
+          id:n.id, title:n.title, body:n.body, schedule:{at:new Date(n.at)}, sound:"default", extra:n.extra}))});
       }catch(e){ console.warn("scheduleNudges",e); }
     },
     // Whole address book (name, phone, address, email, birthday) for the in-app "flag into a circle" list.
@@ -143,7 +142,7 @@
   if(StatusBar && StatusBar.setStyle) StatusBar.setStyle({style:document.documentElement.dataset.theme==="dark"?"DARK":"LIGHT"}).catch(()=>{});
   // Re-render and re-schedule on every foreground so notification text reflects today's nudges.
   if(App && App.addListener) App.addListener("appStateChange",s=>{ if(s.isActive){ renderAll(); window.SamvarNative.scheduleNudges(); refreshCalendar(); syncContacts(); } });
-  if(LocalNotifications && LocalNotifications.addListener) LocalNotifications.addListener("localNotificationActionPerformed",()=>switchPage("home"));
+  if(LocalNotifications && LocalNotifications.addListener) LocalNotifications.addListener("localNotificationActionPerformed",ev=>handleNotificationTap(ev&&ev.notification&&ev.notification.extra));
 
   window.SamvarNative.refreshEntitlement().then(e=>{
     if(e.active) DB.settings.pro={active:true,expires:e.expires,trial:e.trial,source:"appstore"};

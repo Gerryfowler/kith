@@ -33,7 +33,7 @@ const TIERS={
   inner:{label:"Inner",    cadence:7,  halflife:14,  weight:1.2, rhythm:"weekly",    remind:14}, // every week; reminders only after 2 weeks
   invest:{label:"Close",    cadence:30, halflife:40,  weight:1.5, rhythm:"monthly",   remind:30}, // every month
   warm:{label:"Friendly",  cadence:90, halflife:110, weight:0.7, rhythm:"quarterly", remind:90}, // every quarter
-  notnow:{label:"Not now",     cadence:0,  halflife:0,  weight:0}
+  notnow:{label:"Archived",    cadence:0,  halflife:0,  weight:0}
 };
 const CHANNELS={inperson:{label:"In person",base:10},call:{label:"Call",base:5},message:{label:"Message",base:2}};
 // Two kinds of interaction. Multipliers keep the old "friendly"/"substantive" weights so scores don't jump.
@@ -179,7 +179,10 @@ function deviceId(){
   return DB.settings.deviceId;
 }
 function isPro(){ const p=DB.settings.pro; return !!(p && p.active && (!p.expires || p.expires>Date.now())); }
-function entitled(){ return isPro() || devMode(); }
+const FREE_PEOPLE=8, FREE_LOGS=3;
+function gateReached(){ return DB.people.filter(p=>p.tier!=="notnow").length>=FREE_PEOPLE && DB.interactions.length>=FREE_LOGS; }
+// Everything is free until you've added 8 people and logged 3 conversations; then the trial starts.
+function entitled(){ return isPro() || devMode() || !gateReached(); }
 class QuotaError extends Error{}
 async function samvarAI(path, payload){
   const r=await fetch(API_BASE+path,{method:"POST",
@@ -198,8 +201,8 @@ async function samvarAI(path, payload){
 function paywallSheet(reason){
   const dlg=document.createElement("dialog");
   dlg.innerHTML=`<div style="text-align:center;font-size:34px;padding-top:4px">🌱</div>
-    <h2 style="font-size:22px;text-align:center;letter-spacing:-.02em">Try Samvar free for 7 days</h2>
-    ${reason?`<p class="hint" style="text-align:center;margin:4px 0 12px;font-size:14px">${esc(reason)}</p>`:""}
+    <h2 style="font-size:22px;text-align:center;letter-spacing:-.02em">Samvar is working — keep it going</h2>
+    <p class="hint" style="text-align:center;margin:4px 0 12px;font-size:14px">${esc(reason||`You've added ${FREE_PEOPLE} people and logged ${FREE_LOGS} conversations. Start your free trial to carry on — 7 days, no limits.`)}</p>
     <div class="factline" style="font-size:14px"><span class="fk">✨</span><span><b>Claude reads your notes</b> — several people in one ramble, relative dates, facts worth remembering.</span></div>
     <div class="factline" style="font-size:14px"><span class="fk">💬</span><span><b>Openers written for you</b> from what you actually know about each person.</span></div>
     <div class="factline" style="font-size:14px"><span class="fk">☀️</span><span><b>Daily nudges</b>, birthday radar and streaks.</span></div>
@@ -540,6 +543,23 @@ function streakData(){
   while(meaningfulCount(ws)>=G && past<520){ past++; ws-=7*DAY; }
   return {cur, done:cur>=G, streak:past+(cur>=G?1:0)};
 }
+// Daily reach-out streak: consecutive days with at least one conversation logged (today or yesterday keeps it alive).
+// One "rest day" per 7-day run is forgiven automatically, so a holiday weekend doesn't wipe a good month.
+function dayKeyOf(ts){ const d=new Date(ts); return d.getFullYear()+"-"+(d.getMonth()+1)+"-"+d.getDate(); }
+function dailyStreak(){
+  const days=new Set(DB.interactions.map(x=>dayKeyOf(x.ts)));
+  const today=new Date(); today.setHours(0,0,0,0);
+  let d=today.getTime(); const loggedToday=days.has(dayKeyOf(d));
+  if(!loggedToday) d-=DAY;
+  if(!days.has(dayKeyOf(d))) return {streak:0, loggedToday, freezes:0};
+  let n=0, freezes=0, misses=0;
+  while(n<3650){
+    if(days.has(dayKeyOf(d))){ n++; if(n%7===0) freezes=Math.min(3,freezes+1); d-=DAY; continue; }
+    if(freezes>0 && misses<1){ freezes--; misses++; d-=DAY; continue; } // rest day covered
+    break;
+  }
+  return {streak:n, loggedToday, freezes};
+}
 
 /* ---------- birthdays ---------- */
 const MONTHS={jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,dec:11};
@@ -707,9 +727,10 @@ function fmtAgo(ts){
 
 function renderOnboard(){
   const el=document.getElementById("onboard");
+  const np=DB.people.filter(p=>p.tier!=="notnow").length, nl=DB.interactions.length;
   const steps=[
-    {done:DB.people.length>=3, text:"Add the 3–5 people who matter most", go:"people"},
-    {done:DB.interactions.length>0, text:"Log one conversation — just describe it", go:"log"},
+    {done:np>=FREE_PEOPLE, text:`Add the ${FREE_PEOPLE} people you'd hate to lose touch with`, sub:`${Math.min(np,FREE_PEOPLE)} of ${FREE_PEOPLE}`, go:"contacts"},
+    {done:nl>=FREE_LOGS, text:`Log your first ${FREE_LOGS} conversations — just say what happened`, sub:`${Math.min(nl,FREE_LOGS)} of ${FREE_LOGS}`, go:"log"},
     {done:!!DB.settings.nudgeSet, text:"Choose when Samvar nudges you", go:"settings"}
   ];
   if(steps.every(s=>s.done)){ el.innerHTML=""; return; }
@@ -717,10 +738,10 @@ function renderOnboard(){
     <div class="lbl" style="font-size:12px;color:var(--ink-2);font-weight:600;text-transform:uppercase;letter-spacing:.05em">Getting started</div>
     ${steps.map(s=>`<div class="why" style="margin-top:10px;display:flex;gap:10px;align-items:center;font-size:14px">
       <span>${s.done?"✅":"◯"}</span>
-      <span style="flex:1;${s.done?"text-decoration:line-through;color:var(--muted)":""}">${s.text}</span>
+      <span style="flex:1;${s.done?"text-decoration:line-through;color:var(--muted)":""}">${s.text}${s.sub&&!s.done?` <span class="badge" style="margin-left:4px">${s.sub}</span>`:""}</span>
       ${s.done?"":`<button class="btn small" data-go="${s.go}">Go</button>`}</div>`).join("")}
   </div>`;
-  el.querySelectorAll("[data-go]").forEach(b=>b.addEventListener("click",()=>switchPage(b.dataset.go)));
+  el.querySelectorAll("[data-go]").forEach(b=>b.addEventListener("click",()=>{ if(b.dataset.go==="contacts"){ switchPage("people"); const c=document.getElementById("pickContacts"); if(c&&c.style.display!=="none") c.click(); } else switchPage(b.dataset.go); }));
 }
 let showAllSugg=false;
 function renderHome(){
@@ -740,6 +761,9 @@ function renderHome(){
     dEl.innerHTML=diff===0?`<span class="sub">flat vs last week</span>`:
       diff>0?`<span class="delta-up">▲ ${diff} vs last week</span>`:`<span class="delta-dn">▼ ${-diff} vs last week</span>`;
   } else dEl.innerHTML=`<span class="sub">log your first interaction</span>`;
+  const st=dailyStreak(), stEl=document.getElementById("streakLine");
+  if(stEl) stEl.innerHTML=st.streak?`🔥 <b>${st.streak}-day</b> streak${st.loggedToday?"":" — log something today to keep it"}${st.freezes?` · ${st.freezes} rest day${st.freezes===1?"":"s"} banked`:""}`
+    :(DB.interactions.length?`Log a conversation today to start a streak.`:"");
   sparkline(document.getElementById("sparkWrap"), DB.interactions.length?weeklySeries(12):[]);
   renderRings();
 
@@ -765,7 +789,8 @@ function renderHome(){
       ${x.note?`<div class="meta" style="color:var(--ink);margin-top:2px">${esc(x.note.slice(0,110))}${x.note.length>110?"…":""}</div>`:""}
       ${(x.facts||[]).length?`<div class="meta" style="margin-top:2px">💡 ${x.facts.slice(0,2).map(f=>esc(f.fact)).join(" · ")}</div>`:""}</div>
       <div class="spacer"></div><span class="badge">+${Math.round(interactionPoints(x))} smiles</span><button class="xdel" data-x="${x.id}">✕</button></div>`;
-  }).join(""):`<div class="empty">Your logged interactions appear here.</div>`;
+  }).join(""):`<div class="demo"><div class="person" style="cursor:default"><div class="avatar" style="background:var(--accent-soft)">SO</div><div><div class="nm">Sam Ortiz</div><div class="meta">Quality time · In person · yesterday</div><div class="meta" style="color:var(--ink)">Long lunch, talked about his move to Bristol</div><div class="meta">💡 daughter Iris starting school</div></div><div class="spacer"></div><span class="badge">+50 smiles</span></div>
+    <p class="hint" style="margin:8px 0 0">Your conversations will look like this. Log the first one from the Log tab — just say what happened.</p></div>`;
   rec.querySelectorAll("[data-edit]").forEach(row=>row.addEventListener("click",()=>editInteraction(row.dataset.edit)));
   rec.querySelectorAll("[data-x]").forEach(b=>b.addEventListener("click",ev=>{ ev.stopPropagation();
     if(confirm("Delete this interaction? Scores recalculate immediately.")){
@@ -1085,24 +1110,76 @@ function renderCalendarSuggestions(){
 /* ---------- nudge notification text & schedule (used by the native shell) ---------- */
 const NUDGE_DAYS={daily:[0,1,2,3,4,5,6],weekdays:[1,2,3,4,5],"3x":[1,3,5],weekly:[1],off:[]};
 function nudgeText(){
-  const parts=[];
-  for(const b of upcomingBirthdays(3)) parts.push(`🎂 ${capName(b.p)}'s birthday ${b.days===0?"today":b.days===1?"tomorrow":"in "+b.days+" days"}`);
-  for(const n of nudges().slice(0,2)){
-    if(n.kind==="overdue"){ const lab=healthOfP(n.p,Date.now()).label;
-      parts.push(!n.last?`Still no contact with ${capName(n.p)}`:lab==="reconnect now"?`Reconnect with ${capName(n.p)} now — last ${fmtAgo(n.last)}`:`${capName(n.p)} is ${lab} — last ${fmtAgo(n.last)}`); }
-    else if(n.kind==="deepen") parts.push(`Go deeper with ${capName(n.p)} this time`);
-    else if(n.kind==="introduce") parts.push(`Get ${capName(n.p)} and ${capName(n.q)} together`);
-  }
-  if(!parts.length) parts.push("Everyone's in rhythm — a good day to surprise someone with a message.");
-  return {title:"Samvar", body:parts.slice(0,3).join(" · ")};
+  // Morning: one person, by name, and why. Falls back to birthdays / a warm line.
+  const pick=todaysPick(nudges());
+  for(const b of upcomingBirthdays(1)) if(b.days===0) return {title:`🎂 ${capName(b.p)}'s birthday today`, body:"A message now will make their day.", pid:b.p.id};
+  if(pick){ const p=pick.p, t=pick.t;
+    const body=pick.overdue?`It's been ${fmtAgo(pick.last)} — past your ${t.rhythm} rhythm. One message today keeps it easy.`
+      :`${Math.max(1,Math.round(pick.left))} day${Math.round(pick.left)===1?"":"s"} before they slip out of your ${t.rhythm} rhythm. A small message now keeps it easy.`;
+    return {title:`${capName(p)} is next`, body, pid:p.id}; }
+  const b=upcomingBirthdays(3)[0]; if(b) return {title:`🎂 ${capName(b.p)}'s birthday ${b.days===1?"tomorrow":"in "+b.days+" days"}`, body:"Get in first.", pid:b.p.id};
+  return {title:"Samvar", body:"Everyone's in rhythm — a good day to surprise someone with a message."};
+}
+function checkinText(){
+  const st=dailyStreak();
+  return {title:"Who did you talk to today?", body:st.streak?`Your streak is ${st.streak} day${st.streak===1?"":"s"}. Tap a face to keep it alive.`:"Tap a face and Samvar logs it — takes two seconds."};
+}
+function digestText(){
+  const now=Date.now(), ws=weekStart(now);
+  const xs=DB.interactions.filter(x=>x.ts>=ws && x.ts<now), people=new Set(xs.flatMap(x=>x.personIds)).size;
+  const score=connectionScore(now), prev=connectionScore(now-7*DAY), diff=score-prev;
+  const next=todaysPick(nudges());
+  const body=`${xs.length} conversation${xs.length===1?"":"s"} with ${people} ${people===1?"person":"people"} · score ${score} (${diff>=0?"▲":"▼"}${Math.abs(diff)})${next?` · next week: ${capName(next.p)} is drifting`:""}.`;
+  return {title:"Your week in friendships", body};
+}
+function nextTimesAt(hhmm, days, count){
+  const [hh,mm]=String(hhmm||"09:00").split(":").map(Number);
+  const out=[], d=new Date(); d.setHours(hh,mm,0,0);
+  if(d.getTime()<=Date.now()) d.setDate(d.getDate()+1);
+  while(out.length<count && out.length<60){ if(days.includes(d.getDay())) out.push(d.getTime()); d.setDate(d.getDate()+1); }
+  return out;
 }
 function nextNudgeTimes(count){
   const days=NUDGE_DAYS[DB.settings.nudgeFreq||"daily"]||[]; if(!days.length) return [];
-  const [hh,mm]=(DB.settings.nudgeTime||"09:00").split(":").map(Number);
-  const out=[], d=new Date(); d.setHours(hh,mm,0,0);
-  if(d.getTime()<=Date.now()) d.setDate(d.getDate()+1);
-  while(out.length<count){ if(days.includes(d.getDay())) out.push(d.getTime()); d.setDate(d.getDate()+1); }
+  return nextTimesAt(DB.settings.nudgeTime||"09:00", days, count);
+}
+// Everything the native shell should schedule for the next fortnight.
+function plannedNotifications(){
+  const out=[]; const m=nudgeText();
+  nextNudgeTimes(14).forEach((at,i)=>out.push({id:1000+i, title:m.title, body:m.body, at, extra:{kind:"morning", pid:m.pid||""}}));
+  if(DB.settings.checkin!==false){ const c=checkinText();
+    nextTimesAt(DB.settings.checkinTime||"20:00",[0,1,2,3,4,5,6],14).forEach((at,i)=>out.push({id:2000+i, title:c.title, body:c.body, at, extra:{kind:"checkin"}})); }
+  if(DB.settings.digest!==false){ const g=digestText();
+    nextTimesAt("18:00",[0],2).forEach((at,i)=>out.push({id:3000+i, title:g.title, body:g.body, at, extra:{kind:"digest"}})); }
   return out;
+}
+// Tap on a notification: morning → Today (the pick is at the top); check-in → the tap-a-face sheet; digest → Today.
+function handleNotificationTap(extra){
+  switchPage("home");
+  if(extra && extra.kind==="checkin") setTimeout(checkinSheet,300);
+}
+// Evening check-in: tap the faces you spoke to today; each becomes a quick catch-up.
+function checkinSheet(){
+  const ppl=DB.people.filter(p=>p.tier!=="notnow"); if(!ppl.length){ switchPage("people"); return; }
+  const today=dayKeyOf(Date.now());
+  const done=new Set(DB.interactions.filter(x=>dayKeyOf(x.ts)===today).flatMap(x=>x.personIds));
+  const pick=new Set();
+  const dlg=document.createElement("dialog");
+  dlg.innerHTML=`<h2 style="font-size:17px;margin-bottom:4px">Who did you talk to today?</h2>
+    <p class="hint" style="margin:0 0 10px">Tap the faces. Each one is logged as a quick catch-up — you can add detail later.</p>
+    <div class="facegrid">${ppl.sort((a,b)=>(done.has(b.id)?1:0)-(done.has(a.id)?1:0)||a.name.localeCompare(b.name)).map(p=>`<button class="face${done.has(p.id)?" done":""}" data-pid="${p.id}" ${done.has(p.id)?"disabled":""}>${av(p.name,p.photo)}<span>${esc(capName(p))}</span></button>`).join("")}</div>
+    <div class="seg" id="ciChan" style="margin-top:10px"><button data-v="message" class="on">Message</button><button data-v="call">Call</button><button data-v="inperson">In person</button></div>
+    <div style="display:flex;gap:8px;margin-top:12px"><button class="btn" id="ciSave" disabled style="flex:1">Log 0</button><button class="btn ghost small" id="ciClose">Nobody today</button></div>`;
+  document.body.appendChild(dlg); dlg.showModal(); hydratePhotos(dlg);
+  let chan="message";
+  dlg.querySelectorAll("#ciChan button").forEach(b=>b.addEventListener("click",()=>{ chan=b.dataset.v; dlg.querySelectorAll("#ciChan button").forEach(x=>x.classList.toggle("on",x===b)); }));
+  dlg.querySelectorAll(".face:not(.done)").forEach(b=>b.addEventListener("click",ev=>{ ev.stopPropagation(); const id=b.dataset.pid; if(pick.has(id)) pick.delete(id); else pick.add(id); b.classList.toggle("on",pick.has(id));
+    const sv=dlg.querySelector("#ciSave"); sv.disabled=!pick.size; sv.textContent=`Log ${pick.size}`; }));
+  dlg.querySelector("#ciSave").addEventListener("click",()=>{
+    for(const id of pick){ DB.interactions.push({id:uid(),ts:Date.now(),personIds:[id],depth:1,channel:chan,note:"",place:""}); const p=DB.people.find(x=>x.id===id); if(p) delete p.snoozeUntil; }
+    saveDB(); dlg.close(); dlg.remove(); renderAll(); window.SamvarNative?.haptic("success"); window.SamvarNative?.scheduleNudges();
+  });
+  dlg.querySelector("#ciClose").addEventListener("click",()=>{ dlg.close(); dlg.remove(); });
 }
 function renderInsights(){
   const s=windowStats(Date.now(),30);
@@ -1119,56 +1196,51 @@ function renderSettingsUI(){
       <button class="btn small" id="proBtn" style="margin-top:10px">Start free trial</button>`;
   document.getElementById("proBtn")?.addEventListener("click",()=>paywallSheet(""));
   const ai=DB.settings.aiPlan, aiEl=document.getElementById("aiStatus");
-  if(aiEl){ aiEl.textContent=!ai?"Samvar AI: not contacted yet.":ai.plan==="pro"?`Samvar AI: connected as Pro (checked ${fmtAgo(ai.checked)}).`:`Samvar AI: server could not verify your subscription (checked ${fmtAgo(ai.checked)}). Tap to re-check.`;
+  if(aiEl){ aiEl.textContent=!ai?"Samvar AI: not contacted yet.":ai.plan==="pro"?`Samvar AI: connected as Pro (checked ${fmtAgo(ai.checked)}).`:ai.plan==="free"?`Samvar AI: connected — free allowance (checked ${fmtAgo(ai.checked)}).`:`Samvar AI: server could not verify your subscription (checked ${fmtAgo(ai.checked)}). Tap to re-check.`;
     aiEl.onclick=async ()=>{ aiEl.textContent="Samvar AI: checking…"; try{ const r=await fetch(API_BASE+"/v1/me",{headers:{"authorization":"Bearer "+deviceId()}}); const j=await r.json(); DB.settings.aiPlan={plan:j.plan,checked:Date.now()}; saveDB(); }catch(e){ DB.settings.aiPlan={plan:"unreachable",checked:Date.now()}; saveDB(); } renderSettingsUI(); }; }
   document.getElementById("devCard").style.display=devMode()?"block":"none";
   document.querySelectorAll("#nudgeSeg button").forEach(b=>b.classList.toggle("on",b.dataset.nf===(DB.settings.nudgeFreq||"daily")));
   document.getElementById("nudgeTime").value=DB.settings.nudgeTime||"09:00";
+  const ci=document.getElementById("checkinOn"); if(ci){ ci.checked=DB.settings.checkin!==false; document.getElementById("checkinTime").value=DB.settings.checkinTime||"20:00"; document.getElementById("digestOn").checked=DB.settings.digest!==false; }
+  const st=dailyStreak(), pr=document.getElementById("progressStreak"); if(pr) pr.innerHTML=st.streak?`🔥 ${st.streak}-day streak${st.freezes?` · ${st.freezes} rest day${st.freezes===1?"":"s"} banked`:""}`:"No streak yet — log a conversation today to start one.";
+  const mr=document.getElementById("monthReview"); if(mr){ const now=Date.now(), from=now-30*DAY, xs=DB.interactions.filter(x=>x.ts>from), ppl=new Set(xs.flatMap(x=>x.personIds)).size, q=xs.filter(x=>x.depth>=2).length;
+    const quiet=DB.people.filter(p=>p.tier!=="notnow"&&TIERS[p.tier]?.cadence).map(p=>({p,l:lastContact(p,now)})).filter(x=>!x.l||now-x.l>45*DAY).sort((a,b)=>(a.l||0)-(b.l||0))[0];
+    mr.innerHTML=xs.length?`<b>${xs.length}</b> conversation${xs.length===1?"":"s"} with <b>${ppl}</b> ${ppl===1?"person":"people"} · <b>${q}</b> quality time${quiet?` · you haven't spoken to <b>${esc(capName(quiet.p))}</b> in ${quiet.l?fmtAgo(quiet.l):"a while"}`:""}.`:"Your first month's review appears once you've logged a few conversations."; }
 }
-function renderTriage(){
-  document.getElementById("triageWrap").style.display=DB.candidates.length?"block":"none";
-  const tl=document.getElementById("triageList");
-  tl.innerHTML=DB.candidates.length?DB.candidates.slice(0,8).map(c=>`
-    <div class="card" data-cand="${esc(c.name)}" style="padding:12px 14px">
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
-        ${av(c.name)}<div><div class="nm" style="font-weight:700">${esc(c.name)}</div>${c.addr?`<div class="meta">📍 ${esc(c.addr)}</div>`:""}</div></div>
-      <div class="seg">
-        ${Object.entries(TIERS).map(([k,t])=>`<button data-tier="${k}">${t.label}</button>`).join("")}
-        <button data-tier="skip">✕ Skip</button>
-      </div></div>`).join("")+(DB.candidates.length>8?`<p class="hint">${DB.candidates.length-8} more to file…</p>`:"")
-    :"";
-  tl.querySelectorAll("[data-cand]").forEach(card=>{
-    const name=card.dataset.cand;
-    card.querySelectorAll("button").forEach(b=>b.addEventListener("click",()=>{
-      const cand=DB.candidates.find(c=>c.name===name);
-      if(b.dataset.tier!=="skip" && !entitled()){ paywallSheet("Start your free trial to add people."); return; }
-      DB.candidates=DB.candidates.filter(c=>c.name!==name);
-      if(b.dataset.tier!=="skip") DB.people.push({id:uid(),name,tier:b.dataset.tier,aliases:[],added:Date.now(),addr:cand?.addr,loc:cand?.loc,tel:cand?.tel});
-      saveDB(); renderAll();
-    }));
-  });
+function renderTriage(){}
+// Small ring: how much of this person's rhythm is left before they slip (full = just spoke, empty = overdue).
+function rhythmRing(p, size=28){
+  const t=TIERS[p.tier]; if(!t||!t.cadence) return "";
+  const last=lastContact(p,Date.now()); const h=healthOfP(p,Date.now());
+  const frac=last?Math.max(0,Math.min(1,1-((Date.now()-last)/DAY)/t.cadence)):0;
+  const r=(size-4)/2, c=2*Math.PI*r;
+  return `<svg class="rring" viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" aria-hidden="true"><circle cx="${size/2}" cy="${size/2}" r="${r}" fill="none" stroke="var(--grid)" stroke-width="3.5"/>
+    <circle cx="${size/2}" cy="${size/2}" r="${r}" fill="none" stroke="${h.color}" stroke-width="3.5" stroke-linecap="round" stroke-dasharray="${(frac*c).toFixed(1)} ${c.toFixed(1)}" transform="rotate(-90 ${size/2} ${size/2})"/></svg>`;
 }
 function renderPeople(){
   const el=document.getElementById("peopleList");
-  const order=["inner","invest","warm","notnow"];
   let html="";
-  for(const k of order){
-    const ppl=DB.people.filter(p=>p.tier===k).sort((a,b)=>a.name.localeCompare(b.name));
-    if(!ppl.length) continue;
-    html+=`<div class="sect">${TIERS[k].label} · ${ppl.length}</div><div class="card">`;
-    html+=ppl.map(p=>{
-      const h=healthOfP(p,Date.now()), last=lastContact(p,Date.now());
-      return `<div class="person" data-pid="${p.id}">
+  const row=(p,k)=>{ const h=healthOfP(p,Date.now()), last=lastContact(p,Date.now());
+    return `<div class="person" data-pid="${p.id}">
         ${av(p.name,p.photo)}
         <div><div class="nm">${esc(p.name)}</div><div class="meta">last: ${fmtAgo(last)}</div></div>
         <div class="spacer"></div>
-        ${k!=="notnow"?`<span class="status" style="color:${h.color}"><i style="background:${h.color}"></i>${h.label}</span>`:""}
-      </div>`;
-    }).join("");
-    html+=`</div>`;
+        ${k!=="notnow"?`<span class="status" style="color:${h.color};display:inline-flex;align-items:center;gap:8px">${rhythmRing(p)}${h.label}</span>`:""}
+      </div>`; };
+  for(const k of ["inner","invest","warm"]){
+    const ppl=DB.people.filter(p=>p.tier===k).sort((a,b)=>a.name.localeCompare(b.name));
+    if(!ppl.length) continue;
+    html+=`<div class="sect">${TIERS[k].label} · ${ppl.length}</div><div class="card">${ppl.map(p=>row(p,k)).join("")}</div>`;
   }
-  el.innerHTML=html||`<div class="card empty">Add the people who matter — start with your Inner circle (≈5), then the Close friends you want to see more of.</div>`;
-  el.querySelectorAll(".person").forEach(row=>row.addEventListener("click",()=>personSheet(row.dataset.pid)));
+  const arch=DB.people.filter(p=>p.tier==="notnow").sort((a,b)=>a.name.localeCompare(b.name));
+  if(arch.length) html+=`<details style="margin-top:14px"><summary class="sect" style="cursor:pointer;margin:0 0 8px">Archived · ${arch.length}</summary><div class="card">${arch.map(p=>row(p,"notnow")).join("")}</div></details>`;
+  el.innerHTML=html||`<div class="card demo">
+      <div class="lbl" style="font-size:12px;color:var(--ink-2);font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Your people will look like this</div>
+      ${[["Sam Ortiz","Inner","excellent","var(--good)"],["Priya Nair","Close","slipping","var(--warn)"],["Tom Walsh","Friendly","reconnect now","var(--critical)"]].map(([n,c,st,col])=>`<div class="person" style="cursor:default"><div class="avatar" style="background:var(--accent-soft)">${n.split(" ").map(w=>w[0]).join("")}</div><div><div class="nm">${n}</div><div class="meta">${c} · last: 2 weeks ago</div></div><div class="spacer"></div><span class="status" style="color:${col}"><i style="background:${col}"></i>${st}</span></div>`).join("")}
+      <p class="hint" style="margin-top:10px">Start with the ${FREE_PEOPLE} people you'd hate to lose touch with. Add from Contacts brings their photo, number and birthday.</p>
+      <button class="btn" id="emptyAddContacts" style="margin-top:8px">📇 Add from Contacts</button></div>`;
+  el.querySelector("#emptyAddContacts")?.addEventListener("click",()=>{ const b=document.getElementById("pickContacts"); if(b&&b.style.display!=="none") b.click(); else document.getElementById("newPersonName").focus(); });
+  el.querySelectorAll(".person[data-pid]").forEach(row=>row.addEventListener("click",()=>personSheet(row.dataset.pid)));
 }
 function personSheet(pid){
   const p=DB.people.find(x=>x.id===pid); if(!p) return;
@@ -1179,7 +1251,7 @@ function personSheet(pid){
       <div class="avwrap"><div style="transform:scale(1.5);transform-origin:left center">${av(p.name,p.photo)}</div>
         <button class="avedit" id="pphoto" title="${p.photo?"Change photo":"Add photo"}" aria-label="Edit photo">✎</button></div>
       <div style="min-width:0;flex:1"><h2 style="font-size:18px;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(p.name)}</h2>
-        <div class="meta">${TIERS[p.tier]?.label||""}${p.contactId?" · from Contacts":""}</div></div>
+        <div class="meta" style="display:flex;align-items:center;gap:6px">${rhythmRing(p,22)}${TIERS[p.tier]?.label||""}${p.contactId?" · from Contacts":""}</div></div>
       <button class="btn small" id="dlgCloseTop" style="flex:none;background:var(--good)">Done</button></div>
     ${sec("Circle",`<div class="seg" style="margin:0">${Object.entries(TIERS).map(([k,t])=>`<button data-tier="${k}" class="${p.tier===k?"on":""}">${t.label}</button>`).join("")}</div>`)}
     ${sec("Reach them",`${contactBtns(p)?`<div class="btngrid reachrow">${contactBtns(p)}</div>`:`<div class="hint" style="margin:0">No number yet — add ${esc(capName(p))} from Contacts to get one-tap Call, Text and WhatsApp buttons.</div>`}
@@ -1244,8 +1316,8 @@ function askTier(name, cb){
   if(!entitled()){ paywallSheet("Start your free trial to add people."); return; }
   const dlg=document.createElement("dialog");
   dlg.innerHTML=`<h2 style="font-size:17px">Which circle is ${esc(name)} in?</h2>
-    <div class="seg" style="margin-top:12px">${Object.entries(TIERS).map(([k,t])=>`<button data-tier="${k}">${t.label}</button>`).join("")}</div>
-    <p class="hint">Inner ≈ your closest ~5 · Close = friends you’re actively building · Friendly = don’t lose touch · Not now = tracked but no nudges.</p>`;
+    <div class="seg" style="margin-top:12px">${Object.entries(TIERS).filter(([k])=>k!=="notnow").map(([k,t])=>`<button data-tier="${k}">${t.label}</button>`).join("")}</div>
+    <p class="hint">Inner = your closest few, weekly · Close = friends you’re building, monthly · Friendly = don’t lose touch, quarterly.</p>`;
   document.body.appendChild(dlg); dlg.showModal();
   dlg.querySelectorAll("button").forEach(b=>b.addEventListener("click",()=>{ dlg.close(); dlg.remove(); cb(b.dataset.tier); }));
 }
@@ -1363,7 +1435,8 @@ document.getElementById("parseBtn").addEventListener("click",async ()=>{
   const notice=document.getElementById("aiNotice"); notice.style.display="none";
   try{ drafts=await aiParse(text); if(!drafts.length){ alert("Couldn't find an interaction in that note — try describing who you spoke to."); } }
   catch(e){ drafts=parseNote(text);
-    if(e instanceof QuotaError && !isPro()) paywallSheet("Your trial or subscription has ended — this note was filed with the simple rules instead.");
+    if(e instanceof QuotaError && !isPro() && gateReached()) paywallSheet("Your trial or subscription has ended — this note was filed with the simple rules instead.");
+    else if(e instanceof QuotaError && !isPro()){ notice.textContent="Your free AI allowance is used up — this note was filed with the simple rules. Start the free trial for unlimited."; notice.style.display="block"; }
     else if(e instanceof QuotaError){ notice.textContent="Samvar AI couldn’t verify your subscription just now, so this note was filed with the simple rules. It usually clears itself within a few minutes."; notice.style.display="block"; }
     else { const offline=/Failed to fetch|NetworkError|Load failed/.test(e.message);
       notice.textContent=offline?"Samvar AI is unreachable right now, so this note was filed with the simple rules — check the details below.":"Couldn't reach Samvar AI ("+e.message.slice(0,80)+") — filed with the simple rules instead.";
@@ -1450,6 +1523,10 @@ async function contactsSheet(){
     (async ()=>{ for(const p of added){ if(!p.addr||p.loc) continue; const loc=await geocode(p.addr); if(loc){ p.loc={lat:loc.lat,lon:loc.lon}; saveDB(); } } renderAll(); })();
   });
 }
+document.getElementById("checkinOn")?.addEventListener("change",e=>{ DB.settings.checkin=e.target.checked; saveDB(); window.SamvarNative?.scheduleNudges({ask:true}); });
+document.getElementById("checkinTime")?.addEventListener("change",e=>{ DB.settings.checkinTime=e.target.value; saveDB(); window.SamvarNative?.scheduleNudges(); });
+document.getElementById("digestOn")?.addEventListener("change",e=>{ DB.settings.digest=e.target.checked; saveDB(); window.SamvarNative?.scheduleNudges(); });
+document.getElementById("checkinNow")?.addEventListener("click",checkinSheet);
 document.getElementById("nudgePreview").addEventListener("click",()=>{
   const n=nudgeText(), next=nextNudgeTimes(1)[0];
   document.getElementById("nudgePreviewOut").innerHTML=`<b>${esc(n.title)}</b> — ${esc(n.body)}<br>${next?`Next one ${new Date(next).toLocaleString("en-GB",{weekday:"short",hour:"2-digit",minute:"2-digit"})}.`:"Nudges are off."}`;
@@ -1458,7 +1535,7 @@ let peopleView="list";
 function showPeopleView(v){
   peopleView=v;
   document.querySelectorAll("#peopleSeg button").forEach(b=>b.classList.toggle("on",b.dataset.pv===v));
-  ["list","net","places"].forEach(k=>{ document.getElementById("pv-"+k).style.display=k===v?"block":"none"; });
+  ["list","places"].forEach(k=>{ document.getElementById("pv-"+k).style.display=k===v?"block":"none"; });
   window.scrollTo(0,0);
   if(v==="places") setTimeout(renderMap,80);
 }
@@ -1499,10 +1576,6 @@ function addCandidates(items){
   }
   saveDB(); renderAll(); return added;
 }
-document.getElementById("candAdd").addEventListener("click",()=>{
-  const ta=document.getElementById("candPaste");
-  addCandidates(ta.value.split(/\n/)); ta.value="";
-});
 document.getElementById("icsBtn").addEventListener("click",exportICS);
 document.getElementById("geoAllBtn").addEventListener("click",async ()=>{
   const all=[...DB.people,...DB.candidates];
@@ -1643,8 +1716,8 @@ function groupMeetCount(g){
     const ids=(x.personIds||[]).filter(id=>g.has(id)); return ids.length>=2; }).length;
 }
 function renderNetwork(){
+  const gEl=document.getElementById("netGraph"); if(!gEl) return;
   const {pairs,nodes}=coData();
-  const gEl=document.getElementById("netGraph");
   if(nodes.length<2){
     gEl.innerHTML=`<div class="empty">Your constellation appears once you log interactions with more than one person tagged — dinners, group calls, family lunches.</div>`;
     document.getElementById("netGroups").innerHTML=`<div class="card empty">Groups build themselves from who you see together.</div>`;
@@ -1837,13 +1910,13 @@ function showWelcome(){
     <div class="factline" style="font-size:14px;margin-top:8px"><span class="fk">◎</span><span>Put the people who matter in <b>circles</b>, each with its own rhythm.</span></div>
     <div class="factline" style="font-size:14px"><span class="fk">🎙</span><span>After you see someone, <b>just say what happened</b>. Samvar remembers the details.</span></div>
     <div class="factline" style="font-size:14px"><span class="fk">☀️</span><span>Each morning, a few <b>nudges</b> on who to reach out to — with the first line drafted.</span></div>
-    <p class="hint" style="text-align:center;margin:12px 0 10px">Everything stays on your phone. No account needed.</p>
+    <p class="hint" style="text-align:center;margin:12px 0 10px">Free to start — add ${FREE_PEOPLE} people and log ${FREE_LOGS} conversations, then a 7-day free trial. Everything stays on your phone.</p>
     <button class="btn" id="wGo">Add my people</button>
     <button class="btn ghost small" id="wImport" style="width:100%;margin-top:8px">I have a backup file</button>`;
   document.body.appendChild(dlg); dlg.showModal();
   const done=()=>{ DB.settings.welcomed=true; saveDB(); dlg.close(); dlg.remove(); };
   dlg.querySelector("#wGo").addEventListener("click",()=>{ done(); switchPage("people");
-    if(entitled()) document.getElementById("newPersonName").focus(); else paywallSheet("Everything is free for 7 days — no limits."); });
+    const c=document.getElementById("pickContacts"); if(c&&c.style.display!=="none") c.click(); else document.getElementById("newPersonName").focus(); });
   dlg.querySelector("#wImport").addEventListener("click",()=>{ done(); document.getElementById("importFile").click(); });
 }
 showWelcome();

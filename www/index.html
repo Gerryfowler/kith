@@ -29,6 +29,7 @@
           <div class="lbl">Connection score</div>
           <div class="val" id="scoreVal">–</div>
           <div class="sub" id="scoreDelta"></div>
+          <div class="sub" id="streakLine" style="margin-top:6px"></div>
         </div>
         <div id="ringsViz" style="flex:none"></div>
       </div>
@@ -63,7 +64,6 @@
   <section class="page" id="page-people">
     <div class="seg" id="peopleSeg" style="margin:0 0 12px">
       <button data-pv="list" class="on">People</button>
-      <button data-pv="net">Network</button>
       <button data-pv="places">Places</button>
     </div>
 
@@ -76,30 +76,9 @@
         <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
           <button class="btn ghost small" id="pickContacts" style="display:none">📇 Pick from Contacts</button>
         </div>
-        <p class="hint" id="contactsHint">Imported names appear below in “To file”, where you place each one in a circle.</p>
-        <details style="margin-top:8px">
-          <summary class="hint" style="cursor:pointer">Paste a list of names</summary>
-          <textarea id="candPaste" style="min-height:70px;margin-top:8px" placeholder="Rob Citrone&#10;Anna Marsh&#10;…"></textarea>
-          <button class="btn secondary small" id="candAdd" style="margin-top:8px">Add to “To file”</button>
-        </details>
-      </div>
-      <div id="triageWrap" style="display:none">
-        <div class="sect">To file — which circle?</div>
-        <div id="triageList"></div>
+        <p class="hint" id="contactsHint"></p>
       </div>
       <div id="peopleList"></div>
-    </div>
-
-    <div id="pv-net" style="display:none">
-      <div class="card">
-        <div class="lbl" style="font-size:12px;color:var(--ink-2);font-weight:600;text-transform:uppercase;letter-spacing:.05em">Your constellation</div>
-        <div id="netGraph" style="margin-top:8px"></div>
-        <p class="hint">People link up when you log them together. Thicker lines = together more often; colour = relationship health. Tap a face for their profile.</p>
-      </div>
-      <div class="sect">Groups that build themselves</div>
-      <div id="netGroups"></div>
-      <div class="sect">Bridges</div>
-      <div id="netBridges"></div>
     </div>
 
     <div id="pv-places" style="display:none">
@@ -126,36 +105,42 @@
   <section class="page" id="page-settings">
     <div class="card t-lav" id="proCard"></div>
     <p class="hint" id="aiStatus" style="margin:-4px 0 12px 4px;cursor:pointer"></p>
+
+    <div class="sect">Progress</div>
     <div class="card">
-      <h2 style="font-size:17px">Nudges</h2>
-      <p class="hint">When Samvar should remind you who to reach out to.</p>
-      <div class="seg" style="margin-top:10px" id="nudgeSeg">
+      <h2 style="font-size:17px">Streak</h2>
+      <p class="hint" id="progressStreak" style="font-size:15px;color:var(--ink)"></p>
+      <button class="btn ghost small" id="checkinNow" style="margin-top:8px">Who did I talk to today?</button>
+    </div>
+    <div class="card">
+      <h2 style="font-size:17px">Last 30 days</h2>
+      <p class="hint" id="monthReview" style="font-size:15px;color:var(--ink);line-height:1.5"></p>
+      <div class="tile-row" style="margin-top:10px">
+        <div class="tile"><div class="lbl">Quality time</div><div class="val" id="depthVal">–</div><div class="sub">of conversations</div></div>
+      </div>
+      <div id="depthBar" style="margin-top:10px"></div>
+      <div class="legend" id="depthLegend"></div>
+    </div>
+
+    <div class="sect">Settings</div>
+    <div class="card">
+      <h2 style="font-size:17px">Notifications</h2>
+      <p class="hint">Morning nudge — who to reach out to, by name.</p>
+      <div class="seg" style="margin-top:8px" id="nudgeSeg">
         <button data-nf="daily">Daily</button><button data-nf="weekdays">Weekdays</button><button data-nf="3x">3× a week</button><button data-nf="weekly">Weekly</button><button data-nf="off">Off</button>
       </div>
       <div style="display:flex;align-items:center;gap:10px;margin-top:10px">
         <label class="hint" style="margin:0" for="nudgeTime">At</label>
         <input type="time" id="nudgeTime" style="width:auto">
       </div>
-      <button class="btn ghost small" id="nudgePreview" style="margin-top:10px">Preview today’s nudge</button>
+      <div style="display:flex;align-items:center;gap:10px;margin-top:14px;flex-wrap:wrap">
+        <label class="hint" style="margin:0;display:flex;align-items:center;gap:8px;color:var(--ink)"><input type="checkbox" id="checkinOn"> Evening check-in — “Who did you talk to today?”</label>
+        <input type="time" id="checkinTime" style="width:auto">
+      </div>
+      <label class="hint" style="margin-top:10px;display:flex;align-items:center;gap:8px;color:var(--ink)"><input type="checkbox" id="digestOn"> Sunday digest — your week in friendships</label>
+      <button class="btn ghost small" id="nudgePreview" style="margin-top:10px">Preview tomorrow’s nudge</button>
       <div class="hint" id="nudgePreviewOut"></div>
       <p class="hint" id="nudgeStatus">Notifications arrive once Samvar is installed from the App Store.</p>
-    </div>
-    <div class="card">
-      <h2 style="font-size:17px">Insights — last 30 days</h2>
-      <div class="tile-row" style="margin-top:10px">
-        <div class="tile"><div class="lbl">Quality time</div><div class="val" id="depthVal">–</div><div class="sub">of conversations</div></div>
-      </div>
-      <div class="lbl" style="font-size:12px;color:var(--ink-2);font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-top:14px">Depth mix</div>
-      <div id="depthBar" style="margin-top:8px"></div>
-      <div class="legend" id="depthLegend"></div>
-    </div>
-    <div class="card">
-      <h2 style="font-size:17px">Your data</h2>
-      <p class="hint">Everything lives on this phone. Back it up occasionally — the file can be re-imported here or on a new device.</p>
-      <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
-        <button class="btn secondary small" id="exportBtn">Download backup</button>
-        <label class="btn ghost small" style="display:inline-flex;align-items:center">Import backup<input type="file" id="importFile" accept=".json" hidden></label>
-      </div>
     </div>
     <div class="card">
       <h2 style="font-size:17px">Appearance</h2>
@@ -165,30 +150,30 @@
         <button data-th="auto">Match phone</button>
       </div>
     </div>
+    <div class="card">
+      <h2 style="font-size:17px">Your data</h2>
+      <p class="hint">Everything lives on this phone. Back it up occasionally — the file can be re-imported here or on a new device.</p>
+      <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+        <button class="btn secondary small" id="exportBtn">Download backup</button>
+        <label class="btn ghost small" style="display:inline-flex;align-items:center">Import backup<input type="file" id="importFile" accept=".json" hidden></label>
+        <button class="btn ghost small" id="icsBtn">Birthdays → Calendar (.ics)</button>
+        <button class="btn ghost small" id="geoAllBtn">Put contacts on the map</button>
+      </div>
+      <div class="hint" id="geoProg"></div>
+    </div>
     <div class="card" id="devCard" style="display:none">
       <h2 style="font-size:17px">Developer: direct API key</h2>
-      <p class="hint">Testing only. With a key here, notes and openers go straight to Anthropic from this device instead of through Samvar’s server. Tap the Samvar wordmark five times to hide this again.</p>
+      <p class="hint">Testing only. With a key here, notes and openers go straight to Anthropic from this device instead of through Samvar’s server.</p>
       <div style="display:flex;gap:8px;margin-top:10px">
         <input type="password" id="apiKey" placeholder="sk-ant-…" autocomplete="off">
         <button class="btn small" id="apiSave">Save</button>
       </div>
       <div class="hint" id="apiStatus"></div>
     </div>
-    <div class="card">
-      <h2 style="font-size:17px">Birthdays → your Calendar</h2>
-      <p class="hint">Every birthday Samvar knows (🎂 facts) can become a yearly event in your Calendar with a 9am reminder. Open the downloaded file and tap Add All.</p>
-      <button class="btn secondary" id="icsBtn" style="margin-top:10px">Export birthdays (.ics)</button>
-    </div>
-    <div class="card">
-      <h2 style="font-size:17px">Places</h2>
-      <p class="hint">Contacts with an address can be placed on the map, powering “near me” and place search under People → Places. Lookups go to OpenStreetMap (one per second, each address only once, cached on your phone).</p>
-      <button class="btn secondary" id="geoAllBtn" style="margin-top:10px">Put contacts on the map</button>
-      <div class="hint" id="geoProg"></div>
-    </div>
-    <div class="card">
-      <h2 style="font-size:17px">How scoring works</h2>
-      <p class="hint">Every conversation earns smiles: <b>how</b> (in person 10 · call 5 · message 2) × <b>type</b> (quick catch-up ×2.5 · quality time ×5). It doesn’t matter who reached out — every conversation counts the same. Each person’s smiles then <b>fade a little every day</b> — faster for closer circles — so the score genuinely slips when you go quiet. The headline score blends how many of your people are in rhythm (55%), the share of quality time (25%) and how much you talk overall (20%).</p>
-    </div>
+    <details class="card">
+      <summary style="font-size:17px;font-weight:700;cursor:pointer">How scoring works</summary>
+      <p class="hint" style="margin-top:8px">Every conversation earns smiles: <b>how</b> (in person 10 · call 5 · message 2) × <b>type</b> (quick catch-up ×2.5 · quality time ×5). It doesn’t matter who reached out — every conversation counts the same. Each person’s smiles then <b>fade a little every day</b> — faster for closer circles — so the score genuinely slips when you go quiet. The headline score blends how many of your people are in rhythm (55%), the share of quality time (25%) and how much you talk overall (20%).</p>
+    </details>
     <div class="card">
       <button class="btn danger" id="wipeBtn">Erase all data</button>
     </div>

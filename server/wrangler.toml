@@ -9,6 +9,7 @@ routes = [{ pattern = "api.samvar.app", custom_domain = true }]
 [vars]
 MODEL = "claude-sonnet-5"
 DAILY_CAP = "200"
+FREE_CALLS = "12"       # AI calls a device gets before the trial
 RC_ENTITLEMENT = "pro"
 ALLOW_UNENTITLED = "0"   # "1" only for local dev without RevenueCat
 
