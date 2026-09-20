@@ -31,8 +31,8 @@ let DB=loadDB();
 /* ---------- model constants ---------- */
 const TIERS={
   inner:{label:"Inner",    cadence:7,  halflife:14,  weight:1.2, rhythm:"weekly",    remind:14}, // every week; reminders only after 2 weeks
-  invest:{label:"Close",    cadence:30, halflife:40,  weight:1.5, rhythm:"monthly",   remind:30}, // every month
-  warm:{label:"Friendly",  cadence:90, halflife:110, weight:0.7, rhythm:"quarterly", remind:90}, // every quarter
+  invest:{label:"Close",    cadence:30, halflife:40,  weight:1.5, rhythm:"monthly",   remind:42}, // every month; reminders after 6 weeks
+  warm:{label:"Friendly",  cadence:90, halflife:110, weight:0.7, rhythm:"quarterly", remind:120}, // every quarter; reminders after 4 months
   notnow:{label:"Archived",    cadence:0,  halflife:0,  weight:0}
 };
 const CHANNELS={inperson:{label:"In person",base:10},call:{label:"Call",base:5},message:{label:"Message",base:2}};
@@ -735,7 +735,7 @@ function renderOnboard(){
   const el=document.getElementById("onboard");
   const np=DB.people.filter(p=>p.tier!=="notnow").length, nl=DB.interactions.length;
   const steps=[
-    {done:np>=FREE_PEOPLE, text:`Add the ${FREE_PEOPLE} people you'd hate to lose touch with`, sub:`${Math.min(np,FREE_PEOPLE)} of ${FREE_PEOPLE}`, go:"contacts"},
+    {done:np>=FREE_PEOPLE, text:`Add ${FREE_PEOPLE} people, from besties to the resties`, sub:`${Math.min(np,FREE_PEOPLE)} of ${FREE_PEOPLE}`, go:"contacts"},
     {done:nl>=FREE_LOGS, text:`Log your first ${FREE_LOGS} conversations — just say what happened`, sub:`${Math.min(nl,FREE_LOGS)} of ${FREE_LOGS}`, go:"log"},
     {done:!!DB.settings.nudgeSet, text:"Choose when Samvar nudges you", go:"settings"}
   ];
@@ -807,7 +807,7 @@ function renderHome(){
 }
 
 // A person is worth a reminder only in the LAST THIRD of their circle's reminder window
-// (Inner 14d → from day 9.3, Close 30d → from day 20, Friendly 90d → from day 60), or if you've never spoken.
+// (Inner 14d → from day 9, Close 42d → from day 28, Friendly 120d → from day 80), or if you've never spoken.
 function reminderWindow(p){ const t=TIERS[p.tier]; return t&&t.cadence?(t.remind||t.cadence):0; }
 function eligibleForReminder(p, now){
   const w=reminderWindow(p); if(!w) return null;
@@ -1261,7 +1261,7 @@ function renderPeople(){
   el.innerHTML=html||`<div class="card demo">
       <div class="lbl" style="font-size:12px;color:var(--ink-2);font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Your people will look like this</div>
       ${[["Sam Ortiz","Inner","excellent","var(--good)"],["Priya Nair","Close","slipping","var(--warn)"],["Tom Walsh","Friendly","reconnect now","var(--critical)"]].map(([n,c,st,col])=>`<div class="person" style="cursor:default"><div class="avatar" style="background:var(--accent-soft)">${n.split(" ").map(w=>w[0]).join("")}</div><div><div class="nm">${n}</div><div class="meta">${c} · last: 2 weeks ago</div></div><div class="spacer"></div><span class="status" style="color:${col}"><i style="background:${col}"></i>${st}</span></div>`).join("")}
-      <p class="hint" style="margin-top:10px">Start with the ${FREE_PEOPLE} people you'd hate to lose touch with. Add from Contacts brings their photo, number and birthday.</p>
+      <p class="hint" style="margin-top:10px">Add ${FREE_PEOPLE} people, from besties to the resties. Add from Contacts brings their photo, number and birthday.</p>
       <button class="btn" id="emptyAddContacts" style="margin-top:8px">📇 Add from Contacts</button></div>`;
   el.querySelector("#emptyAddContacts")?.addEventListener("click",()=>{ const b=document.getElementById("pickContacts"); if(b&&b.style.display!=="none") b.click(); else document.getElementById("newPersonName").focus(); });
   el.querySelectorAll(".person[data-pid]").forEach(row=>row.addEventListener("click",()=>personSheet(row.dataset.pid)));
@@ -1949,8 +1949,8 @@ switchPage("home");
 /* ---------- first-run welcome ---------- */
 const CIRCLE_GUIDE=[
   {k:"inner", n:"≈5", who:"the people you'd drop everything for", rhythm:"every week", remind:"a fortnight"},
-  {k:"invest", n:"≈15", who:"good friends you want to keep building", rhythm:"every month", remind:"a month"},
-  {k:"warm", n:"≈50", who:"people you'd hate to lose touch with", rhythm:"every quarter", remind:"three months"}
+  {k:"invest", n:"≈15", who:"good friends you want to keep building", rhythm:"every month", remind:"six weeks"},
+  {k:"warm", n:"≈50", who:"people you'd hate to lose touch with", rhythm:"every quarter", remind:"four months"}
 ];
 function circlesHtml(){
   return CIRCLE_GUIDE.map(c=>`<div class="factline" style="font-size:14px;align-items:center"><span class="fk"><i style="display:inline-block;width:12px;height:12px;border-radius:50%;background:var(--ring${CIRCLE_GUIDE.indexOf(c)+1})"></i></span>
