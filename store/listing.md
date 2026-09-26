@@ -23,7 +23,7 @@ Samvar is a small, calm app that keeps that from happening.
 
 **Reach out today.** Every morning, a handful of gentle nudges: who's fading, whose birthday is Thursday, who reached out last time so it's your turn, two friends who'd love each other but have never met. One tap drafts a warm, specific opener from what you actually know about them, and sends it in Messages or WhatsApp.
 
-**See it working.** A connection score that genuinely goes backwards when you go quiet. Rhythm rings for each circle. A weekly goal and streak for meaningful conversations. A constellation of who you see together, and the groups that build themselves from it.
+**See it working.** A connection score that genuinely goes backwards when you go quiet. Rhythm rings for each circle. Net connection days that go up when you log a conversation and down when you don't. A constellation of who you see together, and the groups that build themselves from it.
 
 **Private by design.** Your people, notes and history live on your phone. No accounts, no ads, no selling data. Back up to a file whenever you like.
 
@@ -51,7 +51,7 @@ Capture from the simulator with realistic seeded data. One headline per shot, da
 2. **Opener sheet** — "The first line, written for you" (three drafted messages)
 3. **Log** — "Just say what happened" (a dictated note → parsed draft with facts)
 4. **Person profile** — "Remembers what matters to them" (facts list)
-5. **Score + rings** — "See your friendships in rhythm" (score, rings, streak)
+5. **Score + rings** — "See your friendships in rhythm" (score, rings, net connection days)
 6. **Network** — "The groups that build themselves" (constellation)
 
 ## App Privacy (nutrition label) — answers to give in App Store Connect

@@ -53,7 +53,7 @@ const OpenersBody = z.object({
 });
 const OutingBody = z.object({
   home: z.string().min(2).max(200), month: z.string().max(40),
-  people: z.array(z.object({ name: z.string().max(60), tier: z.string().max(20), facts: z.string().max(600) })).max(20),
+  people: z.array(z.object({ name: z.string().max(60), tier: z.string().max(20), where: z.string().max(200).default(""), facts: z.string().max(600) })).max(20),
 });
 const OutingOut = z.object({ ideas: z.array(z.object({ title: z.string(), venue: z.string(), area: z.string(), when: z.string(), why: z.string(), who: z.array(z.string()), url: z.string() })) });
 const LocalOut = z.object({ items: z.array(z.object({ text: z.string(), kind: z.enum(["weather", "event", "news", "sport"]) })) });
@@ -158,7 +158,7 @@ export default {
           max_tokens: 1800,
           system: OUTING_SYSTEM,
           tools: [{ type: "web_search_20260209", name: "web_search", max_uses: 5 }],
-          messages: [{ role: "user", content: `Home: ${d.home}.\nMonth: ${d.month}.\nFriends:\n${d.people.map((p) => `- ${p.name} (${p.tier}): ${p.facts || "nothing specific"}`).join("\n")}` }],
+          messages: [{ role: "user", content: `Home: ${d.home}.\nMonth: ${d.month}.\nFriends:\n${d.people.map((p) => `- ${p.name} (${p.tier}), lives at: ${p.where || "unknown"}. Facts: ${p.facts || "nothing specific"}`).join("\n")}` }],
           output_config: { format: zodOutputFormat(OutingOut), effort: "low" },
         });
         if (res.stop_reason === "refusal") return json({ error: "refused" }, 422, meta);

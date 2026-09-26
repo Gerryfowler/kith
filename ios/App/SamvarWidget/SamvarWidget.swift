@@ -34,7 +34,7 @@ struct SamvarWidgetView: View {
     @Environment(\.widgetFamily) var family
     let entry: Entry
     var snap: Snapshot { entry.snap }
-    var streakText: String { "🔥 \(snap.streak ?? 0)-day streak" }
+    var streakText: String { "🔥 \(snap.streak ?? 0) net connection days" }
 
     var body: some View {
         switch family {
@@ -93,7 +93,7 @@ struct SamvarWidget: Widget {
                 .widgetURL(URL(string: "samvar://today"))
         }
         .configurationDisplayName("Next up")
-        .description("Who to reach out to today, and your streak.")
+        .description("Who to reach out to today, and your net connection days.")
         .supportedFamilies([.systemSmall, .systemMedium, .accessoryCircular, .accessoryRectangular])
     }
 }

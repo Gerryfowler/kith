@@ -40,8 +40,9 @@ const CHANNELS={inperson:{label:"In person",base:10},call:{label:"Call",base:5},
 // Ring / reminder window per circle, in days, from Settings (weeks). Defaults: Inner 2 weeks, Close 6 weeks, Friendly 3 months.
 function windowDays(tier){ const d={inner:2,invest:6,warm:13}; if(!(tier in d)) return 0; const w=(DB.settings.windows||{})[tier]; return (w||d[tier])*7; }
 function windowText(tier){ const wk=Math.round(windowDays(tier)/7); return wk===13?"3 months":wk===26?"6 months":wk%4===0&&wk>=8?`${wk/4} months`:`${wk} week${wk===1?"":"s"}`; }
-// A person is assumed to have been in touch right before they were added, so rings start full and only wind back.
-function effectiveLast(p, asOf){ return lastContact(p,asOf) || (p.added && p.added<=asOf ? p.added : null) || asOf; }
+// Someone with no logged conversation is treated as if you last spoke two thirds of their window before you added them:
+// their ring starts full but slips from day one, so there is always someone to reach out to.
+function effectiveLast(p, asOf){ const l=lastContact(p,asOf); if(l) return l; const added=Math.min(p.added||asOf, asOf); return added-windowDays(p.tier)*2/3*DAY; }
 // 1 = fully in rhythm … 0 = the window has passed. Stays at 1 for the first two thirds of the window, then slips.
 function rhythmFrac(p, asOf){
   const W=windowDays(p.tier); if(!W) return 0;
@@ -107,7 +108,7 @@ function connectionScore(asOf){
   // and that assumed history fades out over your first 30 days as real conversations take over.
   const firstAdd=Math.min(...tracked.map(p=>p.added||asOf)), carry=Math.max(0,1-Math.max(0,(asOf-firstAdd)/DAY)/30);
   const s=windowStats(asOf,30);
-  const expected=tracked.reduce((a,p)=>a+30/TIERS[p.tier].cadence,0)||1; // conversations a month your rhythms imply
+  const expected=tracked.reduce((a,p)=>a+30/(windowDays(p.tier)||30),0)||1; // conversations a month your windows imply
   const volume=Math.min(1,(s.n+carry*expected)/expected);
   const k=carry*expected+2, quality=(s.xs.filter(x=>x.depth>=2).length+0.5*k)/(s.n+k);
   return Math.round(100*(0.55*coverage + 0.25*quality + 0.20*volume));
@@ -220,7 +221,7 @@ function paywallSheet(reason){
     <p class="hint" style="text-align:center;margin:4px 0 12px;font-size:14px">${esc(reason||`You've added ${FREE_PEOPLE} people and logged ${FREE_LOGS} conversations. Start your free trial to carry on — 7 days, no limits.`)}</p>
     <div class="factline" style="font-size:14px"><span class="fk">✨</span><span><b>Claude reads your notes</b> — several people in one ramble, relative dates, facts worth remembering.</span></div>
     <div class="factline" style="font-size:14px"><span class="fk">💬</span><span><b>Openers written for you</b> from what you actually know about each person.</span></div>
-    <div class="factline" style="font-size:14px"><span class="fk">☀️</span><span><b>Daily nudges</b>, birthday radar and streaks.</span></div>
+    <div class="factline" style="font-size:14px"><span class="fk">☀️</span><span><b>One person a day</b>, birthday radar and net connection days.</span></div>
     <div class="factline" style="font-size:14px"><span class="fk">∞</span><span><b>Unlimited</b> people, notes and openers. Your data stays on your phone.</span></div>
     <button class="btn" data-buy="monthly" style="margin-top:14px">Start free trial · monthly</button>
     <button class="btn secondary" data-buy="yearly" style="margin-top:8px">Start free trial · yearly</button>
@@ -794,8 +795,8 @@ function renderHome(){
       diff>0?`<span class="delta-up">▲ ${diff} vs last week</span>`:`<span class="delta-dn">▼ ${-diff} vs last week</span>`;
   } else dEl.innerHTML=`<span class="sub">log your first interaction</span>`;
   const st=dailyStreak(), stEl=document.getElementById("streakLine");
-  if(stEl) stEl.innerHTML=st.streak?`🔥 <b>${st.streak}-day</b> streak${st.loggedToday?"":" — log something today or it drops by one"}`
-    :(DB.interactions.length?`Log a conversation today to start a streak.`:"");
+  if(stEl) stEl.innerHTML=st.streak?`🔥 <b>${st.streak}</b> net connection day${st.streak===1?"":"s"}${st.loggedToday?"":" — log a conversation today or it drops by one"}`
+    :(DB.interactions.length?`Log a conversation today to add a net connection day.`:"");
   sparkline(document.getElementById("sparkWrap"), DB.interactions.length?weeklySeries(12):[]);
   renderRings();
 
@@ -937,7 +938,7 @@ function pickBlock(n){
   const cap=x=>x.charAt(0).toUpperCase()+x.slice(1);
   const why=n.reason==="date"?`${n.label==="birthday"?"🎂 Birthday":"📅 "+esc(cap(n.label))} <b>${n.days===0?"today":n.days===1?"tomorrow":"in "+n.days+" days"}</b> — get in first.`
     :n.reason==="followup"?`${esc(n.fact.f)} — a good moment to ask how it went.`
-    :n.never?`Added ${fmtAgo(n.last)} and nothing logged since — a first message is the easiest one to send.`
+    :n.never?`Added ${fmtAgo(p.added||Date.now())} and nothing logged since — a first message is the easiest one to send.`
     :n.overdue?`Already <b>${fmtAgo(n.last)}</b> since you spoke — past the ${windowText(p.tier)} window for your ${n.t.label} circle.`
     :`Last contact <b>${fmtAgo(n.last)}</b>. In about <b>${days} day${days===1?"":"s"}</b> they slip out of your ${n.t.rhythm} rhythm — a small message now keeps it easy.`;
   const facts=(p.facts||[]).length?`<div class="why">💡 ${p.facts.slice(-2).map(f=>esc(f.f)).join(" · ")}</div>`:"";
@@ -1110,8 +1111,8 @@ let outingBusy=false;
 async function renderOuting(){
   const el=document.getElementById("outing"); if(!el) return;
   const home=(DB.settings.home||"").trim();
-  const core=DB.people.filter(p=>(p.tier==="inner"||p.tier==="invest"));
-  if(!core.length||dismissed("outing")){ el.innerHTML=""; return; }
+  const core=DB.people.filter(p=>(p.tier==="inner"||p.tier==="invest")&&String(p.addr||"").trim()); // only people whose address we know
+  if(!DB.people.some(p=>p.tier==="inner"||p.tier==="invest")||dismissed("outing")){ el.innerHTML=""; return; }
   const head=`<div class="lbl" style="font-size:12px;color:var(--ink-2);font-weight:600;text-transform:uppercase;letter-spacing:.05em">Something to do</div>`;
   if(!home){
     if(dismissed("outingPrompt")){ el.innerHTML=""; return; }
@@ -1121,17 +1122,27 @@ async function renderOuting(){
     el.querySelector("#outingLater").addEventListener("click",()=>{ dismiss("outingPrompt",14); renderOuting(); });
     return;
   }
+  if(!core.length){
+    if(dismissed("outingAddr")){ el.innerHTML=""; return; }
+    el.innerHTML=`<div class="card t-butter">${head}<div class="why" style="margin-top:6px">Samvar suggests things to do with Inner and Close friends who live near you — add an address to their profile and it can start.</div>
+      <div class="row" style="margin-top:8px"><button class="btn ghost small" id="outingLater">Not now</button></div></div>`;
+    el.querySelector("#outingLater").addEventListener("click",()=>{ dismiss("outingAddr",30); renderOuting(); });
+    return;
+  }
   const o=DB.settings.outing||{};
-  const fresh=o.ideas&&o.home===home&&Date.now()-(o.fetched||0)<7*DAY;
+  const roster=core.map(p=>p.id).sort().join(",");
+  const fresh=o.ideas&&o.home===home&&o.roster===roster&&Date.now()-(o.fetched||0)<7*DAY;
   if(!fresh){
     if(!entitled()){ el.innerHTML=""; return; }
     el.innerHTML=`<div class="card t-butter">${head}<div class="why" style="margin-top:6px">Looking for something nearby this month…</div></div>`;
     if(outingBusy) return; outingBusy=true;
     try{
       const month=new Date().toLocaleDateString("en-GB",{month:"long",year:"numeric"});
-      const r=await samvarAI("/v1/outing",{home, month, people:core.slice(0,20).map(p=>({name:capName(p),tier:TIERS[p.tier].label,facts:(p.facts||[]).map(f=>f.f).slice(0,6).join("; ")}))});
-      DB.settings.outing={home,fetched:Date.now(),ideas:(r&&r.ideas)||[],idx:0};
-    }catch(e){ DB.settings.outing={home,fetched:Date.now()-6*DAY,ideas:[],idx:0}; } // retry tomorrow
+      const r=await samvarAI("/v1/outing",{home, month, people:core.slice(0,20).map(p=>({name:capName(p),tier:TIERS[p.tier].label,where:addrLine(p.addr).slice(0,200),facts:(p.facts||[]).map(f=>f.f).slice(0,6).join("; ")}))});
+      const names=new Set(core.map(p=>capName(p).toLowerCase()));
+      const ideas=((r&&r.ideas)||[]).filter(i=>(i.who||[]).some(n=>names.has(String(n).toLowerCase()))); // only ideas tied to a friend who lives nearby
+      DB.settings.outing={home,roster,fetched:Date.now(),ideas,idx:0};
+    }catch(e){ DB.settings.outing={home,roster,fetched:Date.now()-6*DAY,ideas:[],idx:0}; } // retry tomorrow
     saveDB(); outingBusy=false; return renderOuting();
   }
   const ideas=o.ideas||[]; if(!ideas.length){ el.innerHTML=""; return; }
@@ -1251,7 +1262,7 @@ function nudgeText(asOf){
 }
 function checkinText(){
   const st=dailyStreak();
-  return {title:"Who did you talk to today?", body:st.streak?`Your streak is ${st.streak} day${st.streak===1?"":"s"}. Tap a face to keep it alive.`:"Tap a face and Samvar logs it — takes two seconds."};
+  return {title:"Who did you talk to today?", body:st.streak?`You're on ${st.streak} net connection day${st.streak===1?"":"s"}. Tap a face to add one.`:"Tap a face and Samvar logs it — takes two seconds."};
 }
 function digestText(){
   const now=Date.now(), ws=weekStart(now);
@@ -1334,7 +1345,7 @@ function renderSettingsUI(){
   const ci=document.getElementById("checkinOn"); if(ci){ ci.checked=DB.settings.checkin!==false; document.getElementById("checkinTime").value=DB.settings.checkinTime||"20:00"; document.getElementById("digestOn").checked=DB.settings.digest!==false; }
   for(const [k,id] of [["inner","wInner"],["invest","wClose"],["warm","wWarm"]]){ const r=document.getElementById(id); if(r){ r.value=(DB.settings.windows||{})[k]||{inner:2,invest:6,warm:13}[k]; document.getElementById(id+"Val").textContent=windowText(k); } }
   const ha=document.getElementById("homeAddr"); if(ha && document.activeElement!==ha) ha.value=DB.settings.home||"";
-  const st=dailyStreak(), pr=document.getElementById("progressStreak"); if(pr) pr.innerHTML=st.streak?`🔥 ${st.streak}-day streak`:"No streak yet — log a conversation today to start one.";
+  const st=dailyStreak(), pr=document.getElementById("progressStreak"); if(pr) pr.innerHTML=st.streak?`🔥 ${st.streak} net connection day${st.streak===1?"":"s"}${st.loggedToday?"":" — log a conversation today or it drops by one"}`:"0 net connection days — log a conversation today to add one.";
   const mr=document.getElementById("monthReview"); if(mr){ const now=Date.now(), from=now-30*DAY, xs=DB.interactions.filter(x=>x.ts>from), ppl=new Set(xs.flatMap(x=>x.personIds)).size, q=xs.filter(x=>x.depth>=2).length;
     const quiet=DB.people.filter(p=>p.tier!=="notnow"&&TIERS[p.tier]?.cadence).map(p=>({p,l:lastContact(p,now)})).filter(x=>!x.l||now-x.l>45*DAY).sort((a,b)=>(a.l||0)-(b.l||0))[0];
     mr.innerHTML=xs.length?`<b>${xs.length}</b> conversation${xs.length===1?"":"s"} with <b>${ppl}</b> ${ppl===1?"person":"people"} · <b>${q}</b> quality time${quiet?` · you haven't spoken to <b>${esc(capName(quiet.p))}</b> in ${quiet.l?fmtAgo(quiet.l):"a while"}`:""}.`:"Your first month's review appears once you've logged a few conversations."; }
@@ -2088,20 +2099,22 @@ switchPage("home");
 
 /* ---------- first-run welcome ---------- */
 const CIRCLE_GUIDE=[
-  {k:"inner", n:"≈5", who:"the people you'd drop everything for", rhythm:"every week"},
-  {k:"invest", n:"≈15", who:"good friends you want to keep building", rhythm:"every month"},
-  {k:"warm", n:"≈50", who:"people you'd hate to lose touch with", rhythm:"every quarter"}
+  {k:"inner", n:"≈5", who:"the people you'd drop everything for"},
+  {k:"invest", n:"≈15", who:"good friends you want to keep building"},
+  {k:"warm", n:"≈50", who:"people you'd hate to lose touch with"}
 ];
 function circlesHtml(){
   return CIRCLE_GUIDE.map(c=>`<div class="factline" style="font-size:14px;align-items:center"><span class="fk"><i style="display:inline-block;width:12px;height:12px;border-radius:50%;background:var(--ring${CIRCLE_GUIDE.indexOf(c)+1})"></i></span>
-    <span><b>${TIERS[c.k].label}</b> · ${c.n} people · ${c.who}. Aim to talk <b>${c.rhythm}</b>. Window <b>${windowText(c.k)}</b> — the ring stays full for the first ${Math.round(windowDays(c.k)*2/3)} days, then slips and reminders begin.</span></div>`).join("");
+    <span><b>${TIERS[c.k].label}</b> · ${c.n} people · ${c.who}. Talk every <b>${windowText(c.k)}</b>.</span></div>`).join("");
 }
 function circlesInfoSheet(){
   const dlg=document.createElement("dialog");
-  dlg.innerHTML=`<h2 style="font-size:18px;margin-bottom:4px">Your circles</h2>
-    <p class="hint" style="margin:0 0 10px">Three circles, three rhythms. Fill them from Contacts and Samvar keeps the rhythm for you.</p>
+  dlg.innerHTML=`<h2 style="font-size:18px;margin-bottom:8px">How Samvar works</h2>
     ${circlesHtml()}
-    <p class="hint" style="margin-top:10px"><b>When reminders start:</b> in the last third of each circle's window — Inner from day ${Math.round(windowDays("inner")*2/3)} of ${windowDays("inner")}, Close from day ${Math.round(windowDays("invest")*2/3)} of ${windowDays("invest")}, Friendly from day ${Math.round(windowDays("warm")*2/3)} of ${windowDays("warm")}. Someone you've just added counts as in touch from that day. Birthdays, anniversaries and follow-ups always come first. Change the windows under You → Settings → Rhythms.</p>
+    <div class="factline" style="font-size:14px;margin-top:10px"><span class="fk">◯</span><span><b>Rings</b> empty over each circle's window, counted from your last logged conversation. Someone new starts a third of the way down, so there's always a next person. Change the windows under You → Settings → Rhythms.</span></div>
+    <div class="factline" style="font-size:14px"><span class="fk">☀️</span><span><b>One person a day</b> on Today — birthdays and follow-ups first, then whoever is closest to slipping.</span></div>
+    <div class="factline" style="font-size:14px"><span class="fk">🔥</span><span><b>Net connection days</b> go up one for each day you log a conversation and down one for each day you don't.</span></div>
+    <div class="factline" style="font-size:14px"><span class="fk">📍</span><span><b>Something to do</b> suggests a real place or event near home each week, for an Inner or Close friend who lives nearby.</span></div>
     <div style="display:flex;gap:8px;margin-top:12px"><button class="btn small" id="ciDone">Got it</button><button class="btn ghost small" id="ciReplay">Replay the intro</button></div>`;
   document.body.appendChild(dlg); dlg.showModal();
   dlg.querySelector("#ciDone").addEventListener("click",()=>{ dlg.close(); dlg.remove(); });
@@ -2113,22 +2126,20 @@ document.getElementById("infoBtn")?.addEventListener("click",circlesInfoSheet);
 function showIntro(force){
   if(!force && (DB.settings.welcomed || DB.people.length || DB.interactions.length)) return;
   const steps=[
-    {title:"Build your friendships like your fitness", body:`<p class="hint" style="margin:0 0 10px;font-size:14px">Most of us don’t lose friends on purpose — we just go quiet. Samvar keeps a rhythm going with the people who matter.</p>
-      <p class="hint" style="margin:0 0 6px"><b>Step 1 — put your people in circles.</b> Tap <b>People → Add from Contacts</b> and flag each person into a circle:</p>${circlesHtml()}`},
+    {title:"Build your friendships like your fitness", body:`<p class="hint" style="margin:0 0 10px;font-size:14px">We rarely lose friends on purpose — we just go quiet. Samvar keeps a rhythm going with the people who matter.</p>
+      <p class="hint" style="margin:0 0 6px"><b>Step 1 — put your people in circles.</b> Tap <b>People → Add from Contacts</b> and flag each person:</p>${circlesHtml()}
+      <p class="hint" style="margin:8px 0 0">Each person gets a ring that empties over their circle's window. You can change the windows later.</p>`},
     {title:"Just say what happened", body:`<p class="hint" style="margin:0 0 10px;font-size:14px">After you see someone, open <b>Log</b> and dictate or type a line. Samvar works out who, how, and what's worth remembering.</p>
-      <div class="card" style="padding:10px 12px;margin-bottom:8px"><p class="hint" style="margin:0;font-style:italic">“Long lunch with Kate, she's moving to Bristol in March and Iris starts school in September.”</p></div>
+      <div class="card" style="padding:10px 12px;margin-bottom:8px"><p class="hint" style="margin:0;font-style:italic">“Long lunch with Kate, she's moving to Bristol in March.”</p></div>
       <div class="card" style="padding:10px 12px"><div class="meta"><span class="badge" style="font-size:10px;padding:1px 6px;margin-right:4px">✨ Claude</span>Quality time · In person · today</div>
-        <div class="meta" style="color:var(--ink);margin-top:4px">Long lunch, talked about her move to Bristol</div>
         <div class="factline" style="font-size:13px;margin-top:6px"><span class="fk">🏠</span><span>Kate — moving to Bristol in March</span></div>
-        <div class="factline" style="font-size:13px"><span class="fk">👨‍👩‍👧</span><span>Kate — daughter Iris starts school in September</span></div>
         <div class="factline" style="font-size:13px"><span class="fk">📅</span><span>Follow-up: ask how the move went</span></div></div>`},
-    {title:"The first line, written for you", body:`<p class="hint" style="margin:0 0 10px;font-size:14px">When it's time to reach out, tap <b>✨ Suggest a message</b>. Samvar drafts three openers using everything it knows:</p>
-      <div class="factline" style="font-size:14px"><span class="fk">🗂</span><span>Your past conversations and the facts filed from them.</span></div>
-      <div class="factline" style="font-size:14px"><span class="fk">💼</span><span>Where they work, if it's in their contact card.</span></div>
-      <div class="factline" style="font-size:14px"><span class="fk">📍</span><span>Their <b>address</b> — so it can mention the weather or something happening in their town this week. That's why addresses matter.</span></div>
-      <div class="card" style="padding:10px 12px;margin-top:8px"><p class="hint" style="margin:0;font-style:italic">“How's the Bristol move going — drowning in boxes yet? Hope you're surviving the heat down there this week!”</p></div>`},
-    {title:"Ready?", body:`<p class="hint" style="margin:0 0 10px;font-size:14px">Every morning Samvar names one person to reach out to, with the buttons to do it. Log it and your streak grows.</p>
-      <p class="hint" style="margin:0 0 10px">Free to start — add ${FREE_PEOPLE} people and log ${FREE_LOGS} conversations, then a 7-day free trial. Your data stays on your phone; notes are sent to Samvar AI only to be understood, and never stored.</p>`}
+    {title:"The first line, written for you", body:`<p class="hint" style="margin:0 0 10px;font-size:14px">When it's time to reach out, Samvar drafts the message from what it knows — your past conversations, where they work, and their address, so it can mention what's happening in their town.</p>
+      <div class="card" style="padding:10px 12px"><p class="hint" style="margin:0;font-style:italic">“How's the Bristol move going — drowning in boxes yet?”</p></div>
+      <p class="hint" style="margin:8px 0 0">Add your own address under You → Settings and it also suggests something to do nearby with a friend each week.</p>`},
+    {title:"Every day", body:`<p class="hint" style="margin:0 0 10px;font-size:14px">Today names <b>one person</b> to reach out to — birthdays and follow-ups first, then whoever is closest to slipping — with the buttons to do it.</p>
+      <p class="hint" style="margin:0 0 10px;font-size:14px">Log a conversation and your <b>net connection days</b> go up one. Miss a day and they drop one.</p>
+      <p class="hint" style="margin:0 0 10px">Free to start — add ${FREE_PEOPLE} people and log ${FREE_LOGS} conversations, then a 7-day free trial. Your data stays on your phone; notes go to Samvar AI only to be understood, never stored.</p>`}
   ];
   let i=0; const dlg=document.createElement("dialog");
   const render=()=>{ const st=steps[i], last=i===steps.length-1;
