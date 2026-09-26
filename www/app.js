@@ -1,6 +1,6 @@
 "use strict";
 /* =====================================================================
-   Samvar (formerly Kith) — build your friendships like your fitness
+   Samvar (formerly Kith) — build friendships like your fitness
    All data local on the device.
 ===================================================================== */
 
@@ -2156,7 +2156,7 @@ document.getElementById("infoBtn")?.addEventListener("click",circlesInfoSheet);
 function showIntro(force){
   if(!force && (DB.settings.welcomed || DB.people.length || DB.interactions.length)) return;
   const steps=[
-    {title:"Build your friendships like your fitness", body:`<p class="hint" style="margin:0 0 10px;font-size:14px">We rarely lose friends on purpose — we just go quiet. Samvar keeps a rhythm going with the people who matter.</p>
+    {title:"Build friendships like your fitness", body:`<p class="hint" style="margin:0 0 10px;font-size:14px">We rarely lose friends on purpose — we just go quiet. Samvar keeps a rhythm going with the people who matter.</p>
       <p class="hint" style="margin:0 0 6px"><b>Step 1 — put your people in circles.</b> Tap <b>People → Add from Contacts</b> and flag each person:</p>${circlesHtml()}
       <p class="hint" style="margin:8px 0 0">Each person gets a ring that empties over their circle's window. You can change the windows later.</p>`},
     {title:"Just say what happened", body:`<p class="hint" style="margin:0 0 10px;font-size:14px">After you see someone, open <b>Log</b> and dictate or type a line. Samvar works out who, how, and what's worth remembering.</p>
