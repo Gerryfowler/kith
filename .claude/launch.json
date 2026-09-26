@@ -1,9 +1,6 @@
 {
   "version": "0.0.1",
   "configurations": [
-    {
-      "name": "samvar-web",
-      "url": "http://localhost:4173"
-    }
+    { "name": "www", "runtimeExecutable": "python3", "runtimeArgs": ["-m", "http.server", "8765", "--directory", "www"], "port": 8765 }
   ]
 }
