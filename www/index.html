@@ -26,6 +26,7 @@
   <section class="page" id="page-home">
     <div id="onboard"></div>
     <div id="reflect"></div>
+    <div id="outing"></div>
     <div class="card tile t-lav" id="scoreTile">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
         <div>
@@ -144,6 +145,19 @@
       <button class="btn ghost small" id="nudgePreview" style="margin-top:10px">Preview tomorrow’s nudge</button>
       <div class="hint" id="nudgePreviewOut"></div>
       <p class="hint" id="nudgeStatus">Notifications arrive once Samvar is installed from the App Store.</p>
+    </div>
+    <div class="card">
+      <h2 style="font-size:17px">Rhythms</h2>
+      <p class="hint">How long each circle can go quiet before its ring slips and reminders start. Rings stay full for the first two thirds of the window.</p>
+      <div class="fld" style="margin-top:12px"><label>Inner · <span id="wInnerVal"></span></label><input type="range" id="wInner" min="1" max="12" step="1"></div>
+      <div class="fld"><label>Close · <span id="wCloseVal"></span></label><input type="range" id="wClose" min="1" max="12" step="1"></div>
+      <div class="fld"><label>Friendly · <span id="wWarmVal"></span></label><input type="range" id="wWarm" min="8" max="26" step="1"></div>
+    </div>
+    <div class="card">
+      <h2 style="font-size:17px">Where you live</h2>
+      <p class="hint">Used to suggest things to do nearby with your Inner and Close circles. A town or postcode is enough; only this and your friends' first names and facts go to Samvar AI.</p>
+      <textarea id="homeAddr" rows="2" style="min-height:0;margin-top:8px" placeholder="Town or postcode, e.g. Clapham SW4"></textarea>
+      <button class="btn small" id="homeSave" style="margin-top:8px">Save</button>
     </div>
     <div class="card">
       <h2 style="font-size:17px">Appearance</h2>

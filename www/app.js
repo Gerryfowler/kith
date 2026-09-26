@@ -15,6 +15,7 @@ function migrate(db){
   if(!db.settings.depthV2){ // old 3-level richness (logistical/friendly/substantive/deep) → quick catch-up (1) / quality time (2)
     (db.interactions||[]).forEach(x=>{ x.depth=(x.depth>=3)?2:1; }); db.settings.depthV2=true; }
   db.settings=Object.assign({weekGoal:3,nudgeFreq:"daily",nudgeTime:"09:00"},db.settings||{});
+  db.settings.windows=Object.assign({inner:2,invest:6,warm:13},db.settings.windows||{}); // weeks
   return db;
 }
 function loadDB(){
@@ -36,6 +37,17 @@ const TIERS={
   notnow:{label:"Archived",    cadence:0,  halflife:0,  weight:0}
 };
 const CHANNELS={inperson:{label:"In person",base:10},call:{label:"Call",base:5},message:{label:"Message",base:2}};
+// Ring / reminder window per circle, in days, from Settings (weeks). Defaults: Inner 2 weeks, Close 6 weeks, Friendly 3 months.
+function windowDays(tier){ const d={inner:2,invest:6,warm:13}; if(!(tier in d)) return 0; const w=(DB.settings.windows||{})[tier]; return (w||d[tier])*7; }
+function windowText(tier){ const wk=Math.round(windowDays(tier)/7); return wk===13?"3 months":wk===26?"6 months":wk%4===0&&wk>=8?`${wk/4} months`:`${wk} week${wk===1?"":"s"}`; }
+// A person is assumed to have been in touch right before they were added, so rings start full and only wind back.
+function effectiveLast(p, asOf){ return lastContact(p,asOf) || (p.added && p.added<=asOf ? p.added : null) || asOf; }
+// 1 = fully in rhythm … 0 = the window has passed. Stays at 1 for the first two thirds of the window, then slips.
+function rhythmFrac(p, asOf){
+  const W=windowDays(p.tier); if(!W) return 0;
+  const days=(asOf-effectiveLast(p,asOf))/DAY, start=W*2/3;
+  return days<=start?1:Math.max(0,1-(days-start)/(W-start));
+}
 // Two kinds of interaction. Multipliers keep the old "friendly"/"substantive" weights so scores don't jump.
 const DEPTHS=[
   {n:1,label:"Quick catch-up",mult:2.5},
@@ -64,18 +76,11 @@ function personBalance(p, asOf){
   }
   return b;
 }
-function healthOfP(p, asOf){ // status = time since last contact vs the circle's rhythm
-  const t=TIERS[p.tier]||TIERS.warm;
-  const l=lastContact(p,asOf);
-  if(!l){
-    const age=p.added?((asOf-p.added)/DAY):999;
-    if(age<=(t.cadence||60)) return {k:"new",label:"new",color:"var(--accent)"}; // grace period
-    return {k:"critical",label:"reconnect now",color:"var(--critical)"}; // past the grace period with no contact
-  }
-  // Four levels: new (grace period) → excellent → slipping → reconnect now
-  const r=((asOf-l)/DAY)/(t.cadence||60);
-  if(r<=0.9) return {k:"good",label:"excellent",color:"var(--good)"};      // inner: quiet until ~day 6
-  if(r<=1.8) return {k:"warn",label:"slipping",color:"var(--warn)"};
+function healthOfP(p, asOf){ // excellent → slipping (last third of the window) → reconnect now (window passed)
+  if(!windowDays(p.tier)) return {k:"good",label:"excellent",color:"var(--good)"};
+  const f=rhythmFrac(p,asOf);
+  if(f>=1) return {k:"good",label:"excellent",color:"var(--good)"};
+  if(f>0) return {k:"warn",label:"slipping",color:"var(--warn)"};
   return {k:"critical",label:"reconnect now",color:"var(--critical)"};
 }
 function lastContact(p, asOf){
@@ -91,24 +96,26 @@ function windowStats(asOf, days){
   return {n, deepShare, xs};
 }
 function connectionScore(asOf){
-  const tracked=DB.people.filter(p=>p.tier!=="notnow");
+  const tracked=DB.people.filter(p=>p.tier!=="notnow"&&TIERS[p.tier]?.cadence);
+  if(!tracked.length) return 0;
   const core=tracked.filter(p=>p.tier==="inner"||p.tier==="invest");
-  // coverage: share of core people not "at risk/cold", tier-weighted
+  // coverage: tier-weighted rhythm of your core circles — full while everyone is inside their window
   let covNum=0, covDen=0;
-  for(const p of core){
-    const w=TIERS[p.tier].weight; covDen+=w;
-    const b=personBalance(p,asOf);
-    covNum += w * Math.min(1, b/40);
-  }
-  const coverage = covDen? covNum/covDen : 0;
+  for(const p of core){ const w=TIERS[p.tier].weight; covDen+=w; covNum+=w*rhythmFrac(p,asOf); }
+  const coverage=covDen?covNum/covDen:1;
+  // A new install starts at target: the month before your first person was added counts as on-rhythm,
+  // and that assumed history fades out over your first 30 days as real conversations take over.
+  const firstAdd=Math.min(...tracked.map(p=>p.added||asOf)), carry=Math.max(0,1-Math.max(0,(asOf-firstAdd)/DAY)/30);
   const s=windowStats(asOf,30);
-  const volume = Math.min(1, s.n/20); // ~5 logged interactions/week = full marks
-  const raw = 100*(0.55*coverage + 0.25*s.deepShare + 0.20*volume);
-  return Math.round(raw);
+  const expected=tracked.reduce((a,p)=>a+30/TIERS[p.tier].cadence,0)||1; // conversations a month your rhythms imply
+  const volume=Math.min(1,(s.n+carry*expected)/expected);
+  const k=carry*expected+2, quality=(s.xs.filter(x=>x.depth>=2).length+0.5*k)/(s.n+k);
+  return Math.round(100*(0.55*coverage + 0.25*quality + 0.20*volume));
 }
 function weeklySeries(weeks){
-  // Starts at the first week with a logged conversation, so a new user sees one dot rather than a flat zero line.
-  const now=Date.now(), first=DB.interactions.length?Math.min(...DB.interactions.map(x=>x.ts)):now, out=[];
+  // Starts the week your first person was added (or first conversation), so a new user sees one dot at target.
+  const stamps=[...DB.interactions.map(x=>x.ts),...DB.people.map(p=>p.added).filter(Boolean)];
+  const now=Date.now(), first=stamps.length?Math.min(...stamps):now, out=[];
   for(let i=weeks-1;i>=0;i--){ const t=now-i*7*DAY; if(t+7*DAY<first) continue; out.push({t, v:connectionScore(t)}); }
   return out.length?out:[{t:now, v:connectionScore(now)}];
 }
@@ -116,8 +123,7 @@ function weeklySeries(weeks){
 // and the volume their rhythms imply (weekly Inner + monthly Close + quarterly Friendly), capped like the score itself.
 function targetScore(){
   const ppl=DB.people.filter(p=>p.tier!=="notnow" && TIERS[p.tier]?.cadence); if(!ppl.length) return 0;
-  const monthly=ppl.reduce((a,p)=>a+30/TIERS[p.tier].cadence,0);
-  return Math.round(100*(0.55*1 + 0.25*0.5 + 0.20*Math.min(1, monthly/20)));
+  return Math.round(100*(0.55*1 + 0.25*0.5 + 0.20*1)); // everyone in rhythm, half quality time, conversations at the rate your rhythms imply
 }
 
 /* ---------- name matching & parsing ---------- */
@@ -178,7 +184,16 @@ function deviceId(){
   if(!DB.settings.deviceId){ DB.settings.deviceId=(crypto.randomUUID?crypto.randomUUID():uid()+uid()+uid()); saveDB(); }
   return DB.settings.deviceId;
 }
-function isPro(){ const p=DB.settings.pro; return !!(p && p.active && (!p.expires || p.expires>Date.now())); }
+function isPro(){ const p=DB.settings.pro; if(!p||!p.active) return false; if(!p.expires) return true;
+  // App Store receipts can lag a renewal; keep Pro for a day and a half past the recorded expiry, then re-check with the store.
+  return p.expires + (p.source==="appstore"?36*3600e3:0) > Date.now(); }
+// Gate for Pro actions: never show the paywall without first asking the App Store (via RevenueCat) whether the subscription is live.
+async function requirePro(reason){
+  if(entitled()) return true;
+  const n=window.SamvarNative;
+  if(n&&n.refreshEntitlement){ try{ const e=await n.refreshEntitlement(); if(e&&e.active){ DB.settings.pro={active:true,expires:e.expires,trial:e.trial,source:"appstore"}; saveDB(); renderSettingsUI(); return true; } }catch(err){} }
+  paywallSheet(reason); return false;
+}
 const FREE_PEOPLE=8, FREE_LOGS=3;
 function gateReached(){ return DB.people.filter(p=>p.tier!=="notnow").length>=FREE_PEOPLE && DB.interactions.length>=FREE_LOGS; }
 // Everything is free until you've added 8 people and logged 3 conversations; then the trial starts.
@@ -442,8 +457,8 @@ function ringStats(){
   const now=Date.now();
   return ["inner","invest","warm"].map((k,i)=>{
     const t=TIERS[k], ppl=DB.people.filter(p=>p.tier===k);
-    const inRhythm=ppl.filter(p=>{ const l=lastContact(p,now); return l && (now-l)/DAY<=t.cadence; }).length;
-    return {k, label:t.label, n:ppl.length, inRhythm, pct: ppl.length? inRhythm/ppl.length : 0,
+    const inRhythm=ppl.filter(p=>rhythmFrac(p,now)>=1).length;
+    return {k, label:t.label, n:ppl.length, inRhythm, pct: ppl.length? ppl.reduce((a,p)=>a+rhythmFrac(p,now),0)/ppl.length : 0,
       color:`var(--ring${i+1})`};
   });
 }
@@ -550,22 +565,18 @@ function streakData(){
   while(meaningfulCount(ws)>=G && past<520){ past++; ws-=7*DAY; }
   return {cur, done:cur>=G, streak:past+(cur>=G?1:0)};
 }
-// Daily reach-out streak: consecutive days with at least one conversation logged (today or yesterday keeps it alive).
-// One "rest day" per 7-day run is forgiven automatically, so a holiday weekend doesn't wipe a good month.
+// Daily streak: +1 for every day you log a conversation, −1 for every full day you don't, never below zero.
 function dayKeyOf(ts){ const d=new Date(ts); return d.getFullYear()+"-"+(d.getMonth()+1)+"-"+d.getDate(); }
 function dailyStreak(){
   const days=new Set(DB.interactions.map(x=>dayKeyOf(x.ts)));
   const today=new Date(); today.setHours(0,0,0,0);
-  let d=today.getTime(); const loggedToday=days.has(dayKeyOf(d));
-  if(!loggedToday) d-=DAY;
-  if(!days.has(dayKeyOf(d))) return {streak:0, loggedToday, freezes:0};
-  let n=0, freezes=0, misses=0;
-  while(n<3650){
-    if(days.has(dayKeyOf(d))){ n++; if(n%7===0) freezes=Math.min(3,freezes+1); d-=DAY; continue; }
-    if(freezes>0 && misses<1){ freezes--; misses++; d-=DAY; continue; } // rest day covered
-    break;
-  }
-  return {streak:n, loggedToday, freezes};
+  const loggedToday=days.has(dayKeyOf(today.getTime()));
+  if(!DB.interactions.length) return {streak:0, loggedToday:false};
+  const cur=new Date(Math.min(...DB.interactions.map(x=>x.ts))); cur.setHours(0,0,0,0);
+  let n=0;
+  while(cur.getTime()<today.getTime()){ n=Math.max(0, n+(days.has(dayKeyOf(cur.getTime()))?1:-1)); cur.setDate(cur.getDate()+1); }
+  if(loggedToday) n++;
+  return {streak:n, loggedToday};
 }
 
 /* ---------- birthdays ---------- */
@@ -580,19 +591,33 @@ function birthdayOf(p){
   }
   return null;
 }
-function upcomingBirthdays(withinDays){
-  const now=new Date(); const today=new Date(now.getFullYear(),now.getMonth(),now.getDate());
+function annualDates(p){ // every yearly date on file: birthday, anniversary, …
+  const out=[];
+  for(const f of (p.facts||[])){
+    if(f.kind!=="date") continue; let day, mon;
+    let m=f.f.match(/(\d{1,2})(?:st|nd|rd|th)?(?:\s+of)?\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*/i);
+    if(m){ day=+m[1]; mon=MONTHS[m[2].slice(0,3).toLowerCase()]; }
+    else { m=f.f.match(/(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+(\d{1,2})(?:st|nd|rd|th)?/i); if(m){ day=+m[2]; mon=MONTHS[m[1].slice(0,3).toLowerCase()]; } }
+    if(day==null) continue;
+    const label=/birthday/i.test(f.f)?"birthday":(f.f.replace(/\s*\d{1,2}(st|nd|rd|th)?(\s+of)?\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s*/i," ").replace(/\s+/g," ").trim()||"anniversary");
+    out.push({day,mon,label,f:f.f});
+  }
+  return out;
+}
+// All annual dates coming up within N days, relative to asOf (defaults to now).
+function upcomingDates(withinDays, asOf){
+  const now=new Date(asOf||Date.now()); const today=new Date(now.getFullYear(),now.getMonth(),now.getDate());
   const out=[];
   for(const p of DB.people){
     if(p.tier==="notnow") continue;
-    const b=birthdayOf(p); if(!b) continue;
-    let next=new Date(now.getFullYear(),b.mon,b.day);
-    if(next<today) next=new Date(now.getFullYear()+1,b.mon,b.day);
-    const days=Math.round((next-today)/DAY);
-    if(days<=withinDays) out.push({p,next,days,b});
+    for(const d of annualDates(p)){
+      let next=new Date(today.getFullYear(),d.mon,d.day); if(next<today) next=new Date(today.getFullYear()+1,d.mon,d.day);
+      const days=Math.round((next-today)/DAY); if(days<=withinDays) out.push({p,next,days,label:d.label,isBirthday:d.label==="birthday"});
+    }
   }
   return out.sort((a,b)=>a.days-b.days);
 }
+function upcomingBirthdays(withinDays, asOf){ return upcomingDates(withinDays, asOf).filter(x=>x.isBirthday); }
 function allBirthdays(){
   return DB.people.map(p=>({p,b:birthdayOf(p)})).filter(x=>x.b && x.p.tier!=="notnow");
 }
@@ -769,7 +794,7 @@ function renderHome(){
       diff>0?`<span class="delta-up">▲ ${diff} vs last week</span>`:`<span class="delta-dn">▼ ${-diff} vs last week</span>`;
   } else dEl.innerHTML=`<span class="sub">log your first interaction</span>`;
   const st=dailyStreak(), stEl=document.getElementById("streakLine");
-  if(stEl) stEl.innerHTML=st.streak?`🔥 <b>${st.streak}-day</b> streak${st.loggedToday?"":" — log something today to keep it"}${st.freezes?` · ${st.freezes} rest day${st.freezes===1?"":"s"} banked`:""}`
+  if(stEl) stEl.innerHTML=st.streak?`🔥 <b>${st.streak}-day</b> streak${st.loggedToday?"":" — log something today or it drops by one"}`
     :(DB.interactions.length?`Log a conversation today to start a streak.`:"");
   sparkline(document.getElementById("sparkWrap"), DB.interactions.length?weeklySeries(12):[]);
   renderRings();
@@ -777,8 +802,8 @@ function renderHome(){
   renderReflection();
   // other nudges (the pick already lives in the "This week" card): top 3 by urgency, expandable to all
   const att=document.getElementById("homeAttention"), more=document.getElementById("suggMore");
-  const pick=todaysPick(nudges());
-  const list=nudges().filter(n=>!pick||n.p!==pick.p||n.kind!=="overdue");
+  const pick=todaysPick();
+  const list=nudges().filter(n=>!pick||n.p!==pick.p||!["overdue","date","followup"].includes(n.kind));
   const shown=showAllSugg?list:list.slice(0,3);
   document.getElementById("attHead").style.display=list.length?"":"none";
   att.innerHTML=shown.map(nudgeCard).join("");
@@ -809,15 +834,14 @@ function renderHome(){
 
 // Reminders start in the LAST THIRD of the circle's rhythm (Close monthly → from day 20, Friendly quarterly → from day 60),
 // except Inner, where they only start once two full weeks have passed. Never-contacted people are eligible straight away.
-function reminderWindow(p){ const t=TIERS[p.tier]; return t&&t.cadence?(t.remind||t.cadence):0; }
+function reminderWindow(p){ return windowDays(p.tier); }
+// Eligible once they're in the last third of their window (ring slipping) — counted from the last conversation,
+// or from when they were added if there's none logged yet.
 function eligibleForReminder(p, now){
   const w=reminderWindow(p); if(!w) return null;
   if(p.snoozeUntil && p.snoozeUntil>now) return null;
-  const last=lastContact(p,now);
-  if(!last) return {last:null, days:p.added?(now-p.added)/DAY:0, frac:1, never:true};
-  const days=(now-last)/DAY, frac=days/w;
-  const startAt=p.tier==="inner"?1:2/3;
-  return frac>=startAt ? {last, days, frac, never:false} : null;
+  const last=effectiveLast(p,now), days=(now-last)/DAY, frac=days/w;
+  return frac>=2/3 ? {last, days, frac, never:!lastContact(p,now)} : null;
 }
 function suggestions(){
   const now=Date.now(), out=[];
@@ -864,35 +888,65 @@ function nudges(){
         out.push({kind:"followup", key:"fu:"+p.id+":"+f.followUp, p, urgency:1.1, fact:f,
           why:`${esc(f.f)} — that was ${age<1?"today":age<2?"yesterday":Math.round(age)+" days ago"}. A good moment to ask how it went.`}); }
   }
+  // dates that are here or close (birthdays, anniversaries) outrank everything
+  for(const d of upcomingDates(3, now)) out.push({kind:"date", key:"date:"+d.p.id+":"+d.next.getTime(), p:d.p, urgency:1.5-d.days*0.1, days:d.days, label:d.label,
+    why:`${d.label==="birthday"?"🎂 Birthday":"📅 "+esc(d.label.charAt(0).toUpperCase()+d.label.slice(1))} ${d.days===0?"today":d.days===1?"tomorrow":"in "+d.days+" days"} — get in first.`});
   return out.filter(n=>!dismissed(n.key)).sort((a,b)=>b.urgency-a.urgency);
 }
-const KIND_LABEL={deepen:"Go deeper",promote:"Closer than you think",introduce:"Introduce",followup:"Ask how it went"};
+const KIND_LABEL={deepen:"Go deeper",promote:"Closer than you think",introduce:"Introduce",followup:"Ask how it went",date:"Coming up"};
 // The one person most likely to slip past their circle's rhythm next: soonest to cross the threshold,
 // or, if everyone is already past it, the most overdue. Ignores people snoozed or dismissed today.
-function todaysPick(nudgeList){
-  const now=Date.now(); let best=null;
+// Today's pick, in priority order: a date that's here or within 3 days → a follow-up whose moment has come →
+// someone past their window → someone slipping. Close and Friendly before Inner; most overdue first.
+function todaysPick(asOf){
+  const now=asOf||Date.now(); let best=null;
+  const consider=c=>{ if(dismissed("pick:"+c.p.id)) return; if(!best||c.rank<best.rank) best=c; };
+  for(const d of upcomingDates(3, now)) consider({kind:"pick",reason:"date",p:d.p,days:d.days,label:d.label,t:TIERS[d.p.tier]||TIERS.warm,last:effectiveLast(d.p,now),left:0,rank:d.days});
+  for(const n of nudges().filter(n=>n.kind==="followup")) consider({kind:"pick",reason:"followup",p:n.p,fact:n.fact,t:TIERS[n.p.tier]||TIERS.warm,last:effectiveLast(n.p,now),left:0,rank:100});
   for(const p of DB.people){
-    if(dismissed("pick:"+p.id)) continue;
     const e=eligibleForReminder(p,now); if(!e) continue;
-    const t=TIERS[p.tier], w=reminderWindow(p), left=e.never?0:w-e.days;
-    // Order: past the window first, then never-contacted, then closest to the window; Close/Friendly before Inner.
-    const rank=(left<=0&&!e.never?0:e.never?1000:2000)+(p.tier==="inner"?500:0)+Math.max(0,left);
-    if(!best||rank<best.rank) best={p,last:e.last,left,t,rank,never:e.never,overdue:left<=0&&!e.never};
+    const w=reminderWindow(p), left=w-e.days, overdue=left<=0;
+    consider({kind:"pick",reason:overdue?"overdue":"slipping",p,last:e.last,left,t:TIERS[p.tier],never:e.never,overdue,rank:(overdue?1000:2000)+(p.tier==="inner"?500:0)+Math.max(0,left)});
   }
-  return best?{kind:"pick",p:best.p,last:best.last,left:best.left,t:best.t,overdue:best.overdue,never:best.never}:null;
+  return best;
+}
+// The suggested message shown right on the pick — only when there's something real to work with
+// (a date, a follow-up, stored facts or a town for local context), never for a generic hello.
+let pickLineBusy=false;
+function pickHasInput(n){ const p=n.p; return n.reason==="date"||n.reason==="followup"||(p.facts||[]).length>0||!!townFromAddr(p.addr); }
+function pickOpts(n){ return n.reason==="followup"?{followUp:n.fact.f}:n.reason==="date"?{birthday:{label:n.label,days:n.days}}:{}; }
+function pickLineHtml(text){
+  return `<div style="margin-top:10px;padding:10px 12px;border-radius:12px;background:var(--tint-butter)"><div class="hint" style="margin:0 0 4px"><span class="badge" style="font-size:10px;padding:1px 6px">✨ Claude</span> suggested message</div>
+    <div style="font-size:15px;line-height:1.45">“${esc(text)}”</div>
+    <div class="btngrid"><button class="btn small" data-act="sendline">Send</button><button class="btn ghost small" data-act="editline">Edit / more</button><button class="btn ghost small" data-act="copyline">Copy</button></div></div>`;
+}
+async function renderPickLine(n){
+  const el=document.getElementById("pickLine"); if(!el||!n||!pickHasInput(n)||!entitled()) return;
+  const day=dayKeyOf(Date.now()), c=DB.settings.pickLine;
+  if(c&&c.pid===n.p.id&&c.day===day&&c.reason===n.reason&&c.text){ el.innerHTML=pickLineHtml(c.text); bindNudgeButtons(document.getElementById("reflect")); return; }
+  if(pickLineBusy) return; pickLineBusy=true;
+  el.innerHTML=`<div class="hint" style="margin-top:8px">✨ Drafting a message…</div>`;
+  try{ const arr=await aiOpeners(n.p, pickOpts(n)); const el2=document.getElementById("pickLine");
+    if(arr[0]){ DB.settings.pickLine={pid:n.p.id,day,reason:n.reason,text:arr[0]}; saveDB(); if(el2){ el2.innerHTML=pickLineHtml(arr[0]); bindNudgeButtons(document.getElementById("reflect")); } }
+    else if(el2) el2.innerHTML=""; }
+  catch(e){ const el2=document.getElementById("pickLine"); if(el2) el2.innerHTML=""; }
+  finally{ pickLineBusy=false; }
 }
 function pickBlock(n){
   const p=n.p, h=healthOfP(p,Date.now()), days=Math.max(1,Math.round(n.left));
-  const why=n.never?`You haven't logged a conversation with them yet — a first message is the easiest one to send.`
-    :n.overdue?`Already <b>${fmtAgo(n.last)}</b> since you spoke — past the ${n.t.rhythm} rhythm for your ${n.t.label} circle.`
+  const cap=x=>x.charAt(0).toUpperCase()+x.slice(1);
+  const why=n.reason==="date"?`${n.label==="birthday"?"🎂 Birthday":"📅 "+esc(cap(n.label))} <b>${n.days===0?"today":n.days===1?"tomorrow":"in "+n.days+" days"}</b> — get in first.`
+    :n.reason==="followup"?`${esc(n.fact.f)} — a good moment to ask how it went.`
+    :n.never?`Added ${fmtAgo(n.last)} and nothing logged since — a first message is the easiest one to send.`
+    :n.overdue?`Already <b>${fmtAgo(n.last)}</b> since you spoke — past the ${windowText(p.tier)} window for your ${n.t.label} circle.`
     :`Last contact <b>${fmtAgo(n.last)}</b>. In about <b>${days} day${days===1?"":"s"}</b> they slip out of your ${n.t.rhythm} rhythm — a small message now keeps it easy.`;
   const facts=(p.facts||[]).length?`<div class="why">💡 ${p.facts.slice(-2).map(f=>esc(f.f)).join(" · ")}</div>`:"";
-  return `<div class="sugg" data-pid="${p.id}" data-key="pick:${p.id}" data-kind="pick" style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(0,0,0,.08)">
+  return `<div class="sugg" data-pid="${p.id}" data-key="pick:${p.id}" data-kind="pick" data-reason="${n.reason}"${n.fact?` data-fu="${esc(n.fact.f)}"`:""}${n.reason==="date"?` data-dlabel="${esc(n.label)}" data-ddays="${n.days}"`:""} style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(0,0,0,.08)">
     <div style="display:flex;align-items:center;gap:10px">${av(p.name,p.photo)}
       <div><div class="nm" style="font-weight:700">${esc(p.name)}</div>
       <span class="status" style="color:${h.color}"><i style="background:${h.color}"></i>${h.label}</span></div>
       <div class="spacer"></div><span class="badge">${n.t.label}</span></div>
-    <div class="why">${why}</div>${facts}
+    <div class="why">${why}</div>${facts}<div id="pickLine"></div>
     <div class="btngrid">${contactBtns(p)}<button class="btn ${contactLinks(p).length?"ghost ":""}small" data-act="opener">✨ Opener</button>
       <button class="btn ghost small" data-act="log">✓ Log it</button><button class="btn ghost small" data-act="dismiss" data-days="1">Skip today</button></div>
   </div>`;
@@ -928,15 +982,19 @@ function bindNudgeButtons(root){
   root.querySelectorAll(".sugg").forEach(card=>{
     const p=DB.people.find(x=>x.id===card.dataset.pid); if(!p) return;
     const q=card.dataset.qid?DB.people.find(x=>x.id===card.dataset.qid):null;
-    card.querySelectorAll("button[data-act]").forEach(b=>b.addEventListener("click",()=>{
+    card.querySelectorAll("button[data-act]").forEach(b=>{ if(b.dataset.bound) return; b.dataset.bound="1"; b.addEventListener("click",()=>{
       const act=b.dataset.act;
+      const opts=()=>({q, deepen:card.dataset.kind==="deepen", followUp:card.dataset.fu||"", birthday:card.dataset.dlabel?{label:card.dataset.dlabel,days:+card.dataset.ddays}:undefined});
+      if(act==="sendline"){ const c=DB.settings.pickLine; if(c&&c.text) sendMessage(p,c.text); }
+      if(act==="copyline"){ const c=DB.settings.pickLine; if(c&&c.text){ navigator.clipboard?.writeText(c.text); b.textContent="Copied ✓"; } }
+      if(act==="editline"){ requirePro("Suggested messages are part of Samvar — start your free trial.").then(ok=>{ if(ok) openerSheet(p,opts()); }); }
       if(act==="log"){ switchPage("log");
         const ta=document.getElementById("logText"); ta.value=`With ${p.name} — `; ta.focus(); }
       if(act==="snooze"){ p.snoozeUntil=Date.now()+7*DAY; saveDB(); renderAll(); }
       if(act==="dismiss"){ dismiss(card.dataset.key,+b.dataset.days||14); renderAll(); }
       if(act==="promote"&&TIERS[b.dataset.to]){ p.tier=b.dataset.to; saveDB(); renderAll(); }
-      if(act==="opener"){ if(!entitled()){ paywallSheet("Openers are part of Samvar — start your free trial."); return; } openerSheet(p,{q, deepen:card.dataset.kind==="deepen", followUp:card.dataset.fu||""}); }
-    }));
+      if(act==="opener"){ requirePro("Openers are part of Samvar — start your free trial.").then(ok=>{ if(ok) openerSheet(p,opts()); }); }
+    }); });
   });
 }
 
@@ -949,7 +1007,9 @@ async function aiOpeners(p,opts){
   const xs=DB.interactions.filter(x=>x.personIds.includes(p.id)).sort((a,b)=>b.ts-a.ts).slice(0,3);
   const intent=opts.q?`Intent: suggest that the three of us (me, ${p.name} and ${opts.q.name}) get together soon.`
     :opts.deepen?"Intent: go beyond logistics — ask about something that genuinely matters to them."
-    :opts.followUp?`Intent: ask how this went — "${opts.followUp}".`:"";
+    :opts.followUp?`Intent: ask how this went — "${opts.followUp}".`
+    :opts.birthday?`Intent: it's their ${opts.birthday.label} ${opts.birthday.days===0?"today":opts.birthday.days===1?"tomorrow":"in "+opts.birthday.days+" days"} — warm, specific good wishes.`
+    :opts.plan?`Intent: propose this plan and make it easy to say yes to — ${opts.plan}.`:"";
   const brief={name:p.name, tier:TIERS[p.tier].label,
     last:xs[0]?fmtAgo(xs[0].ts)+" — "+(xs[0].note||DEPTHS[xs[0].depth-1].label):"never logged",
     recent:xs.slice(1).map(x=>`${fmtAgo(x.ts)}: ${x.note||DEPTHS[x.depth-1].label}`).join("; ")||"none",
@@ -1033,7 +1093,7 @@ function renderReflection(){
   let line;
   if(!DB.people.length) line="Add a few people and Samvar will start noticing who you'd love to hear from.";
   else if(!xs.length) line=early?"Fresh week. One message today is all it takes to get it moving.":"A quiet week so far — that's fine. One small message changes it.";
-  const pick=todaysPick(nudges());
+  const pick=todaysPick();
   if(line){} else if(quality.length) line=`Quality time with ${qNames.join(" and ")} this week 💛 Lovely.${pick?" Keep it rolling:":""}`;
   else line=`${xs.length} catch-up${xs.length===1?"":"s"} so far this week — nice work.${pick?" Next up:":""}`;
   el.innerHTML=`<div class="card t-mint" style="padding-bottom:12px">
@@ -1042,6 +1102,49 @@ function renderReflection(){
     ${pick?pickBlock(pick):(DB.people.length?`<div class="why" style="margin-top:8px">Everyone's in rhythm right now — enjoy it. Samvar will nudge you when someone drifts.</div>`:"")}
   </div>`;
   bindNudgeButtons(el);
+  renderPickLine(pick);
+}
+
+/* ---------- something to do nearby: one idea a week for your Inner / Close circles ---------- */
+let outingBusy=false;
+async function renderOuting(){
+  const el=document.getElementById("outing"); if(!el) return;
+  const home=(DB.settings.home||"").trim();
+  const core=DB.people.filter(p=>(p.tier==="inner"||p.tier==="invest"));
+  if(!core.length||dismissed("outing")){ el.innerHTML=""; return; }
+  const head=`<div class="lbl" style="font-size:12px;color:var(--ink-2);font-weight:600;text-transform:uppercase;letter-spacing:.05em">Something to do</div>`;
+  if(!home){
+    if(dismissed("outingPrompt")){ el.innerHTML=""; return; }
+    el.innerHTML=`<div class="card t-butter">${head}<div class="why" style="margin-top:6px">Add where you live under <b>You → Settings</b> and Samvar will suggest something to do nearby with one of your Inner or Close friends each week.</div>
+      <div class="row" style="margin-top:8px"><button class="btn small" id="outingGo">Add my address</button><button class="btn ghost small" id="outingLater">Not now</button></div></div>`;
+    el.querySelector("#outingGo").addEventListener("click",()=>{ switchPage("settings"); setTimeout(()=>document.getElementById("homeAddr")?.focus(),200); });
+    el.querySelector("#outingLater").addEventListener("click",()=>{ dismiss("outingPrompt",14); renderOuting(); });
+    return;
+  }
+  const o=DB.settings.outing||{};
+  const fresh=o.ideas&&o.home===home&&Date.now()-(o.fetched||0)<7*DAY;
+  if(!fresh){
+    if(!entitled()){ el.innerHTML=""; return; }
+    el.innerHTML=`<div class="card t-butter">${head}<div class="why" style="margin-top:6px">Looking for something nearby this month…</div></div>`;
+    if(outingBusy) return; outingBusy=true;
+    try{
+      const month=new Date().toLocaleDateString("en-GB",{month:"long",year:"numeric"});
+      const r=await samvarAI("/v1/outing",{home, month, people:core.slice(0,20).map(p=>({name:capName(p),tier:TIERS[p.tier].label,facts:(p.facts||[]).map(f=>f.f).slice(0,6).join("; ")}))});
+      DB.settings.outing={home,fetched:Date.now(),ideas:(r&&r.ideas)||[],idx:0};
+    }catch(e){ DB.settings.outing={home,fetched:Date.now()-6*DAY,ideas:[],idx:0}; } // retry tomorrow
+    saveDB(); outingBusy=false; return renderOuting();
+  }
+  const ideas=o.ideas||[]; if(!ideas.length){ el.innerHTML=""; return; }
+  const idea=ideas[(o.idx||0)%ideas.length];
+  const who=(idea.who||[]).map(n=>core.find(p=>capName(p).toLowerCase()===String(n).toLowerCase()||p.name.toLowerCase()===String(n).toLowerCase())).filter(Boolean);
+  el.innerHTML=`<div class="card t-butter">${head}
+    <div class="nm" style="font-weight:700;font-size:16px;margin-top:6px">${esc(idea.title||"")}</div>
+    <div class="meta">${esc([idea.venue,idea.area,idea.when].filter(Boolean).join(" · "))}</div>
+    <div class="why" style="margin-top:6px">${esc(idea.why||"")}${who.length?` — with <b>${who.map(p=>esc(capName(p))).join(" and ")}</b>`:""}</div>
+    <div class="btngrid">${who[0]?`<button class="btn small" data-oact="suggest">✨ Suggest it to ${esc(capName(who[0]))}</button>`:""}<button class="btn ghost small" data-oact="next">Another idea</button><button class="btn ghost small" data-oact="skip">Not now</button></div></div>`;
+  el.querySelector('[data-oact="suggest"]')?.addEventListener("click",()=>{ requirePro("Suggested messages are part of Samvar — start your free trial.").then(ok=>{ if(ok) openerSheet(who[0],{plan:`${idea.title}${idea.venue?" at "+idea.venue:""}${idea.when?" ("+idea.when+")":""}`}); }); });
+  el.querySelector('[data-oact="next"]').addEventListener("click",()=>{ DB.settings.outing.idx=((o.idx||0)+1)%ideas.length; saveDB(); renderOuting(); });
+  el.querySelector('[data-oact="skip"]').addEventListener("click",()=>{ dismiss("outing",7); renderOuting(); });
 }
 
 /* ---------- Contacts sync: people linked to a card refresh from it on every foreground ---------- */
@@ -1134,16 +1237,16 @@ function renderCalendarSuggestions(){
 
 /* ---------- nudge notification text & schedule (used by the native shell) ---------- */
 const NUDGE_DAYS={daily:[0,1,2,3,4,5,6],weekdays:[1,2,3,4,5],"3x":[1,3,5],weekly:[1],off:[]};
-function nudgeText(){
-  // Morning: one person, by name, and why. Falls back to birthdays / a warm line.
-  const pick=todaysPick(nudges());
-  for(const b of upcomingBirthdays(1)) if(b.days===0) return {title:`🎂 ${capName(b.p)}'s birthday today`, body:"A message now will make their day.", pid:b.p.id};
-  const fu=nudges().find(n=>n.kind==="followup"); if(fu) return {title:`Ask ${capName(fu.p)} how it went`, body:fu.fact.f, pid:fu.p.id};
+function nudgeText(asOf){
+  const now=asOf||Date.now(), pick=todaysPick(now);
+  if(pick&&pick.reason==="date"){ const ico=pick.label==="birthday"?"🎂":"📅", when=pick.days===0?"today":pick.days===1?"tomorrow":"in "+pick.days+" days";
+    return {title:`${ico} ${capName(pick.p)}'s ${pick.label} ${when}`, body:pick.days===0?"A message now will make their day.":"Get in first.", pid:pick.p.id}; }
+  if(pick&&pick.reason==="followup") return {title:`Ask ${capName(pick.p)} how it went`, body:pick.fact.f, pid:pick.p.id};
   if(pick){ const p=pick.p, t=pick.t;
-    const body=pick.never?`You haven't logged a conversation with ${capName(p)} yet. A first hello is the easiest message to send.`:pick.overdue?`It's been ${fmtAgo(pick.last)} — past your ${t.rhythm} rhythm. One message today keeps it easy.`
-      :`${Math.max(1,Math.round(pick.left))} day${Math.round(pick.left)===1?"":"s"} before they slip out of your ${t.rhythm} rhythm. A small message now keeps it easy.`;
+    const body=pick.never?`Nothing logged with ${capName(p)} since you added them. A first hello is the easiest message to send.`
+      :pick.overdue?`It's been ${fmtAgo(pick.last)} — past your ${windowText(p.tier)} window. One message today keeps it easy.`
+      :`${Math.max(1,Math.round(pick.left))} day${Math.round(pick.left)===1?"":"s"} before they slip past your ${windowText(p.tier)} window. A small message now keeps it easy.`;
     return {title:`${capName(p)} is next`, body, pid:p.id}; }
-  const b=upcomingBirthdays(3)[0]; if(b) return {title:`🎂 ${capName(b.p)}'s birthday ${b.days===1?"tomorrow":"in "+b.days+" days"}`, body:"Get in first.", pid:b.p.id};
   return {title:"Samvar", body:"Everyone's in rhythm — a good day to surprise someone with a message."};
 }
 function checkinText(){
@@ -1171,8 +1274,9 @@ function nextNudgeTimes(count){
 }
 // Everything the native shell should schedule for the next fortnight.
 function plannedNotifications(){
-  const out=[]; const m=nudgeText();
-  nextNudgeTimes(14).forEach((at,i)=>out.push({id:1000+i, title:m.title, body:m.body, at, extra:{kind:"morning", pid:m.pid||""}}));
+  const out=[];
+  // Each morning gets the text for THAT day (so a birthday fires on the day, never the day after); rescheduled on every foreground.
+  nextNudgeTimes(14).forEach((at,i)=>{ const m=nudgeText(at); out.push({id:1000+i, title:m.title, body:m.body, at, extra:{kind:"morning", pid:m.pid||""}}); });
   if(DB.settings.checkin!==false){ const c=checkinText();
     nextTimesAt(DB.settings.checkinTime||"20:00",[0,1,2,3,4,5,6],14).forEach((at,i)=>out.push({id:2000+i, title:c.title, body:c.body, at, extra:{kind:"checkin"}})); }
   if(DB.settings.digest!==false){ const g=digestText();
@@ -1228,7 +1332,9 @@ function renderSettingsUI(){
   document.querySelectorAll("#nudgeSeg button").forEach(b=>b.classList.toggle("on",b.dataset.nf===(DB.settings.nudgeFreq||"daily")));
   document.getElementById("nudgeTime").value=DB.settings.nudgeTime||"09:00";
   const ci=document.getElementById("checkinOn"); if(ci){ ci.checked=DB.settings.checkin!==false; document.getElementById("checkinTime").value=DB.settings.checkinTime||"20:00"; document.getElementById("digestOn").checked=DB.settings.digest!==false; }
-  const st=dailyStreak(), pr=document.getElementById("progressStreak"); if(pr) pr.innerHTML=st.streak?`🔥 ${st.streak}-day streak${st.freezes?` · ${st.freezes} rest day${st.freezes===1?"":"s"} banked`:""}`:"No streak yet — log a conversation today to start one.";
+  for(const [k,id] of [["inner","wInner"],["invest","wClose"],["warm","wWarm"]]){ const r=document.getElementById(id); if(r){ r.value=(DB.settings.windows||{})[k]||{inner:2,invest:6,warm:13}[k]; document.getElementById(id+"Val").textContent=windowText(k); } }
+  const ha=document.getElementById("homeAddr"); if(ha && document.activeElement!==ha) ha.value=DB.settings.home||"";
+  const st=dailyStreak(), pr=document.getElementById("progressStreak"); if(pr) pr.innerHTML=st.streak?`🔥 ${st.streak}-day streak`:"No streak yet — log a conversation today to start one.";
   const mr=document.getElementById("monthReview"); if(mr){ const now=Date.now(), from=now-30*DAY, xs=DB.interactions.filter(x=>x.ts>from), ppl=new Set(xs.flatMap(x=>x.personIds)).size, q=xs.filter(x=>x.depth>=2).length;
     const quiet=DB.people.filter(p=>p.tier!=="notnow"&&TIERS[p.tier]?.cadence).map(p=>({p,l:lastContact(p,now)})).filter(x=>!x.l||now-x.l>45*DAY).sort((a,b)=>(a.l||0)-(b.l||0))[0];
     mr.innerHTML=xs.length?`<b>${xs.length}</b> conversation${xs.length===1?"":"s"} with <b>${ppl}</b> ${ppl===1?"person":"people"} · <b>${q}</b> quality time${quiet?` · you haven't spoken to <b>${esc(capName(quiet.p))}</b> in ${quiet.l?fmtAgo(quiet.l):"a while"}`:""}.`:"Your first month's review appears once you've logged a few conversations."; }
@@ -1237,8 +1343,7 @@ function renderTriage(){}
 // Small ring: how much of this person's rhythm is left before they slip (full = just spoke, empty = overdue).
 function rhythmRing(p, size=28){
   const t=TIERS[p.tier]; if(!t||!t.cadence) return "";
-  const last=lastContact(p,Date.now()); const h=healthOfP(p,Date.now());
-  const frac=last?Math.max(0,Math.min(1,1-((Date.now()-last)/DAY)/t.cadence)):0;
+  const h=healthOfP(p,Date.now()); const frac=rhythmFrac(p,Date.now());
   const r=(size-4)/2, c=2*Math.PI*r;
   return `<svg class="rring" viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" aria-hidden="true"><circle cx="${size/2}" cy="${size/2}" r="${r}" fill="none" stroke="var(--grid)" stroke-width="3.5"/>
     <circle cx="${size/2}" cy="${size/2}" r="${r}" fill="none" stroke="${h.color}" stroke-width="3.5" stroke-linecap="round" stroke-dasharray="${(frac*c).toFixed(1)} ${c.toFixed(1)}" transform="rotate(-90 ${size/2} ${size/2})"/></svg>`;
@@ -1311,7 +1416,7 @@ function personSheet(pid){
     p.facts.splice(+b.dataset.fdel,1); saveDB(); dlg.close(); dlg.remove(); personSheet(pid);
   }));
   dlg.querySelector("#dlgCloseTop").addEventListener("click",()=>{ dlg.close(); dlg.remove(); });
-  dlg.querySelector("#pOpener").addEventListener("click",()=>{ if(!entitled()){ paywallSheet("Suggested messages are part of Samvar — start your free trial."); return; } openerSheet(p,{}); });
+  dlg.querySelector("#pOpener").addEventListener("click",()=>{ requirePro("Suggested messages are part of Samvar — start your free trial.").then(ok=>{ if(ok) openerSheet(p,{}); }); });
   dlg.querySelector("#paddrSave").addEventListener("click",async ()=>{
     const v=dlg.querySelector("#paddr").value.split(/\n|,\s*/).map(x=>x.trim()).filter(Boolean).join("\n");
     const st=dlg.querySelector("#paddrStatus");
@@ -1342,8 +1447,8 @@ function personSheet(pid){
   dlg.querySelector("#dlgClose").addEventListener("click",()=>{ dlg.close(); dlg.remove(); });
   dlg.querySelector("#dlgDel").addEventListener("click",()=>{ if(confirm(`Remove ${p.name}? Their logged interactions stay but untagged.`)){ removePhoto(p.photo); DB.people=DB.people.filter(x=>x.id!==pid); saveDB(); dlg.close(); dlg.remove(); renderAll(); }});
 }
-function askTier(name, cb){
-  if(!entitled()){ paywallSheet("Start your free trial to add people."); return; }
+function askTier(name, cb){ requirePro("Start your free trial to add people.").then(ok=>{ if(ok) askTierNow(name, cb); }); }
+function askTierNow(name, cb){
   const dlg=document.createElement("dialog");
   dlg.innerHTML=`<h2 style="font-size:17px">Which circle is ${esc(name)} in?</h2>
     <div class="seg" style="margin-top:12px">${Object.entries(TIERS).filter(([k])=>k!=="notnow").map(([k,t])=>`<button data-tier="${k}">${t.label}</button>`).join("")}</div>
@@ -1459,7 +1564,7 @@ function renderDrafts(){
 document.getElementById("parseBtn").addEventListener("click",async ()=>{
   const text=document.getElementById("logText").value.trim();
   if(!text) return;
-  if(!entitled()){ paywallSheet("Start your free trial to log conversations."); return; }
+  if(!await requirePro("Start your free trial to log conversations.")) return;
   const btn=document.getElementById("parseBtn");
   btn.textContent="Understanding…"; btn.disabled=true;
   const notice=document.getElementById("aiNotice"); notice.style.display="none";
@@ -1491,7 +1596,7 @@ function initNativeUI(){
   const n=window.SamvarNative; if(!n) return;
   document.getElementById("nudgeStatus").textContent="Nudges arrive as notifications at the time you choose.";
   const b=document.getElementById("pickContacts"); b.style.display="inline-flex"; b.textContent="📇 Add from Contacts";
-  b.onclick=()=>{ if(!entitled()){ paywallSheet("Start your free trial to add people."); return; } contactsSheet(); };
+  b.onclick=()=>requirePro("Start your free trial to add people.").then(ok=>{ if(ok) contactsSheet(); });
   document.getElementById("contactsHint").textContent="Add from Contacts shows your address book so you can flag people straight into a circle. Only the people you flag are saved, and only on this phone.";
 }
 // Whole-address-book picker: flag each person into a circle, then add them all at once (with photo, number, address, birthday).
@@ -1557,6 +1662,8 @@ document.getElementById("checkinOn")?.addEventListener("change",e=>{ DB.settings
 document.getElementById("checkinTime")?.addEventListener("change",e=>{ DB.settings.checkinTime=e.target.value; saveDB(); window.SamvarNative?.scheduleNudges(); });
 document.getElementById("digestOn")?.addEventListener("change",e=>{ DB.settings.digest=e.target.checked; saveDB(); window.SamvarNative?.scheduleNudges(); });
 document.getElementById("checkinNow")?.addEventListener("click",checkinSheet);
+for(const [k,id] of [["inner","wInner"],["invest","wClose"],["warm","wWarm"]]){ const r=document.getElementById(id); if(r) r.addEventListener("input",e=>{ (DB.settings.windows=DB.settings.windows||{})[k]=+e.target.value; document.getElementById(id+"Val").textContent=windowText(k); saveDB(); renderAll(); window.SamvarNative?.scheduleNudges(); }); }
+document.getElementById("homeSave")?.addEventListener("click",()=>{ DB.settings.home=document.getElementById("homeAddr").value.trim(); DB.settings.outing=null; DB.settings.dismissed&&delete DB.settings.dismissed.outing; saveDB(); renderAll(); });
 document.getElementById("nudgePreview").addEventListener("click",()=>{
   const n=nudgeText(), next=nextNudgeTimes(1)[0];
   document.getElementById("nudgePreviewOut").innerHTML=`<b>${esc(n.title)}</b> — ${esc(n.body)}<br>${next?`Next one ${new Date(next).toLocaleString("en-GB",{weekday:"short",hour:"2-digit",minute:"2-digit"})}.`:"Nudges are off."}`;
@@ -1959,11 +2066,11 @@ function switchPage(p){
   if(p==="people" && peopleView==="places") setTimeout(renderMap,80);
 }
 document.querySelectorAll("nav.tabs button").forEach(b=>b.addEventListener("click",()=>switchPage(b.dataset.p)));
-function renderAll(){ renderHome(); renderTriage(); renderPeople(); renderNetwork(); renderInsights(); renderSettingsUI(); renderCalendarSuggestions(); hydratePhotos(); scheduleWidgetSync(); }
+function renderAll(){ renderHome(); renderTriage(); renderPeople(); renderNetwork(); renderInsights(); renderSettingsUI(); renderCalendarSuggestions(); renderOuting(); hydratePhotos(); scheduleWidgetSync(); }
 /* ---------- home-screen widget + Siri (native shell) ---------- */
 function widgetSnapshot(){
-  const pick=todaysPick(nudges()), st=dailyStreak();
-  const why=!pick?"Everyone's in rhythm — enjoy it":pick.never?"No conversation logged yet — say hello":pick.overdue?`${fmtAgo(pick.last)} since you spoke — past your ${pick.t.rhythm} rhythm`
+  const pick=todaysPick(), st=dailyStreak();
+  const why=!pick?"Everyone's in rhythm — enjoy it":pick.reason==="date"?`${pick.label.charAt(0).toUpperCase()+pick.label.slice(1)} ${pick.days===0?"today":pick.days===1?"tomorrow":"in "+pick.days+" days"}`:pick.reason==="followup"?`Ask how it went: ${pick.fact.f}`:pick.never?"No conversation logged yet — say hello":pick.overdue?`${fmtAgo(pick.last)} since you spoke — past your ${pick.t.rhythm} rhythm`
     :`${Math.max(1,Math.round(pick.left))} day${Math.round(pick.left)===1?"":"s"} before they slip out of your ${pick.t.rhythm} rhythm`;
   return {name:pick?pick.p.name:null, initials:pick?initials(pick.p.name):null, why, streak:st.streak, score:connectionScore(Date.now()), target:targetScore(), updated:Date.now()};
 }
@@ -1981,20 +2088,20 @@ switchPage("home");
 
 /* ---------- first-run welcome ---------- */
 const CIRCLE_GUIDE=[
-  {k:"inner", n:"≈5", who:"the people you'd drop everything for", rhythm:"every week", remind:"two weeks"},
-  {k:"invest", n:"≈15", who:"good friends you want to keep building", rhythm:"every month", remind:"about three weeks"},
-  {k:"warm", n:"≈50", who:"people you'd hate to lose touch with", rhythm:"every quarter", remind:"about two months"}
+  {k:"inner", n:"≈5", who:"the people you'd drop everything for", rhythm:"every week"},
+  {k:"invest", n:"≈15", who:"good friends you want to keep building", rhythm:"every month"},
+  {k:"warm", n:"≈50", who:"people you'd hate to lose touch with", rhythm:"every quarter"}
 ];
 function circlesHtml(){
   return CIRCLE_GUIDE.map(c=>`<div class="factline" style="font-size:14px;align-items:center"><span class="fk"><i style="display:inline-block;width:12px;height:12px;border-radius:50%;background:var(--ring${CIRCLE_GUIDE.indexOf(c)+1})"></i></span>
-    <span><b>${TIERS[c.k].label}</b> · ${c.n} people · ${c.who}. Aim to talk <b>${c.rhythm}</b>; reminders start once it's been ${c.remind}.</span></div>`).join("");
+    <span><b>${TIERS[c.k].label}</b> · ${c.n} people · ${c.who}. Aim to talk <b>${c.rhythm}</b>. Window <b>${windowText(c.k)}</b> — the ring stays full for the first ${Math.round(windowDays(c.k)*2/3)} days, then slips and reminders begin.</span></div>`).join("");
 }
 function circlesInfoSheet(){
   const dlg=document.createElement("dialog");
   dlg.innerHTML=`<h2 style="font-size:18px;margin-bottom:4px">Your circles</h2>
     <p class="hint" style="margin:0 0 10px">Three circles, three rhythms. Fill them from Contacts and Samvar keeps the rhythm for you.</p>
     ${circlesHtml()}
-    <p class="hint" style="margin-top:10px"><b>When reminders start:</b> in the last third of the rhythm — Close from about day 20 of the month, Friendly from about month two of the quarter — except Inner, where they only start once two full weeks have passed. Anyone you've never logged a conversation with can come up straight away. Every conversation you log counts the same, whoever reached out.</p>
+    <p class="hint" style="margin-top:10px"><b>When reminders start:</b> in the last third of each circle's window — Inner from day ${Math.round(windowDays("inner")*2/3)} of ${windowDays("inner")}, Close from day ${Math.round(windowDays("invest")*2/3)} of ${windowDays("invest")}, Friendly from day ${Math.round(windowDays("warm")*2/3)} of ${windowDays("warm")}. Someone you've just added counts as in touch from that day. Birthdays, anniversaries and follow-ups always come first. Change the windows under You → Settings → Rhythms.</p>
     <div style="display:flex;gap:8px;margin-top:12px"><button class="btn small" id="ciDone">Got it</button><button class="btn ghost small" id="ciReplay">Replay the intro</button></div>`;
   document.body.appendChild(dlg); dlg.showModal();
   dlg.querySelector("#ciDone").addEventListener("click",()=>{ dlg.close(); dlg.remove(); });

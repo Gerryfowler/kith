@@ -152,7 +152,7 @@
 
   window.SamvarNative.refreshEntitlement().then(e=>{
     if(e.active) DB.settings.pro={active:true,expires:e.expires,trial:e.trial,source:"appstore"};
-    else if(DB.settings.pro && DB.settings.pro.source==="appstore") DB.settings.pro.active=false;
+    else if(DB.settings.pro && DB.settings.pro.source==="appstore" && !(DB.settings.pro.expires && DB.settings.pro.expires+36*3600e3>Date.now())) DB.settings.pro.active=false;
     saveDB(); renderAll();
   }).catch(()=>{});
   window.SamvarNative.scheduleNudges();

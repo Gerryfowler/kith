@@ -176,3 +176,5 @@ dialog.mapdlg .mapx{top:calc(env(safe-area-inset-top) + 16px);right:16px;z-index
 header.app h1{white-space:nowrap}
 header.app .brand{flex-wrap:nowrap;align-items:baseline}
 header.app .brand .tag{flex:1;min-width:0;white-space:normal;line-height:1.2}
+
+input[type=range]{width:100%;accent-color:var(--accent);margin:8px 0 2px}
