@@ -1,7 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
-import { ADDRESS_SYSTEM, LOCAL_SYSTEM, OPENER_SYSTEM, OUTING_SYSTEM, PARSE_SYSTEM } from "./prompts";
+import { ADDRESS_SYSTEM, LOCAL_SYSTEM, FEEDBACK_SYSTEM, OPENER_SYSTEM, OUTING_SYSTEM, PARSE_SYSTEM } from "./prompts";
 
 export interface Env {
   ANTHROPIC_API_KEY: string;
@@ -52,10 +52,12 @@ const OpenersBody = z.object({
   work: z.string().max(160).optional(),
 });
 const OutingBody = z.object({
-  home: z.string().min(2).max(200), month: z.string().max(40),
+  home: z.string().min(2).max(200), month: z.string().max(40), me: z.string().max(800).default(""),
   people: z.array(z.object({ name: z.string().max(60), tier: z.string().max(20), where: z.string().max(200).default(""), facts: z.string().max(600) })).max(20),
 });
 const OutingOut = z.object({ ideas: z.array(z.object({ title: z.string(), venue: z.string(), area: z.string(), when: z.string(), why: z.string(), who: z.array(z.string()), url: z.string() })) });
+const FeedbackBody = z.object({ text: z.string().min(1).max(600), idea: z.string().max(200).default(""), people: z.array(z.string().max(60)).max(30).default([]) });
+const FeedbackOut = z.object({ memories: z.array(z.object({ about: z.enum(["me", "friend"]), name: z.string(), memory: z.string() })) });
 const LocalOut = z.object({ items: z.array(z.object({ text: z.string(), kind: z.enum(["weather", "event", "news", "sport"]) })) });
 
 function json(body: unknown, status = 200, extra: Record<string, string> = {}): Response {
@@ -124,7 +126,7 @@ export default {
     const meta = { "x-samvar-plan": plan };
 
     if (req.method === "GET" && url.pathname === "/v1/me") return json({ plan }, 200, meta);
-    if (req.method !== "POST" || !["/v1/parse", "/v1/openers", "/v1/address", "/v1/outing"].includes(url.pathname)) return json({ error: "not found" }, 404);
+    if (req.method !== "POST" || !["/v1/parse", "/v1/openers", "/v1/address", "/v1/outing", "/v1/feedback"].includes(url.pathname)) return json({ error: "not found" }, 404);
 
     if (plan !== "pro" && plan !== ("free")) return json({ error: "subscription required" }, 402, meta);
     if (Number(req.headers.get("content-length") ?? 0) > MAX_BODY) return json({ error: "too large" }, 413, meta);
@@ -158,11 +160,24 @@ export default {
           max_tokens: 1800,
           system: OUTING_SYSTEM,
           tools: [{ type: "web_search_20260209", name: "web_search", max_uses: 5 }],
-          messages: [{ role: "user", content: `Home: ${d.home}.\nMonth: ${d.month}.\nFriends:\n${d.people.map((p) => `- ${p.name} (${p.tier}), lives at: ${p.where || "unknown"}. Facts: ${p.facts || "nothing specific"}`).join("\n")}` }],
+          messages: [{ role: "user", content: `Home: ${d.home}.\nMonth: ${d.month}.\nAbout me: ${d.me || "nothing specific"}.\nFriends:\n${d.people.map((p) => `- ${p.name} (${p.tier}), lives at: ${p.where || "unknown"}. Facts: ${p.facts || "nothing specific"}`).join("\n")}` }],
           output_config: { format: zodOutputFormat(OutingOut), effort: "low" },
         });
         if (res.stop_reason === "refusal") return json({ error: "refused" }, 422, meta);
         out = { ideas: (res.parsed_output?.ideas ?? []).slice(0, 3) };
+      } else if (url.pathname === "/v1/feedback") {
+        const b = FeedbackBody.safeParse(body);
+        if (!b.success) return json({ error: "bad request" }, 400, meta);
+        const d = b.data;
+        const res = await client.messages.parse({
+          model: env.MODEL,
+          max_tokens: 400,
+          system: FEEDBACK_SYSTEM,
+          messages: [{ role: "user", content: `Friends: ${d.people.join(", ") || "none"}.\nSuggested outing: ${d.idea || "unknown"}.\nThey wrote: ${d.text}` }],
+          output_config: { format: zodOutputFormat(FeedbackOut), effort: "low" },
+        });
+        if (res.stop_reason === "refusal") return json({ error: "refused" }, 422, meta);
+        out = { memories: (res.parsed_output?.memories ?? []).slice(0, 5) };
       } else if (url.pathname === "/v1/address") {
         const b = AddressBody.safeParse(body);
         if (!b.success) return json({ error: "bad request" }, 400, meta);

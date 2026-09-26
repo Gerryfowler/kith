@@ -1138,7 +1138,7 @@ async function renderOuting(){
     if(outingBusy) return; outingBusy=true;
     try{
       const month=new Date().toLocaleDateString("en-GB",{month:"long",year:"numeric"});
-      const r=await samvarAI("/v1/outing",{home, month, people:core.slice(0,20).map(p=>({name:capName(p),tier:TIERS[p.tier].label,where:addrLine(p.addr).slice(0,200),facts:(p.facts||[]).map(f=>f.f).slice(0,6).join("; ")}))});
+      const r=await samvarAI("/v1/outing",{home, month, me:(DB.settings.meFacts||[]).map(f=>f.f).slice(0,12).join("; "), people:core.slice(0,20).map(p=>({name:capName(p),tier:TIERS[p.tier].label,where:addrLine(p.addr).slice(0,200),facts:(p.facts||[]).map(f=>f.f).slice(0,6).join("; ")}))});
       const names=new Set(core.map(p=>capName(p).toLowerCase()));
       const ideas=((r&&r.ideas)||[]).filter(i=>(i.who||[]).some(n=>names.has(String(n).toLowerCase()))); // only ideas tied to a friend who lives nearby
       DB.settings.outing={home,roster,fetched:Date.now(),ideas,idx:0};
@@ -1152,10 +1152,36 @@ async function renderOuting(){
     <div class="nm" style="font-weight:700;font-size:16px;margin-top:6px">${esc(idea.title||"")}</div>
     <div class="meta">${esc([idea.venue,idea.area,idea.when].filter(Boolean).join(" · "))}</div>
     <div class="why" style="margin-top:6px">${esc(idea.why||"")}${who.length?` — with <b>${who.map(p=>esc(capName(p))).join(" and ")}</b>`:""}</div>
-    <div class="btngrid">${who[0]?`<button class="btn small" data-oact="suggest">✨ Suggest it to ${esc(capName(who[0]))}</button>`:""}<button class="btn ghost small" data-oact="next">Another idea</button><button class="btn ghost small" data-oact="skip">Not now</button></div></div>`;
+    <div class="btngrid">${who[0]?`<button class="btn small" data-oact="suggest">✨ Suggest it to ${esc(capName(who[0]))}</button>`:""}<button class="btn ghost small" data-oact="next">Another idea</button><button class="btn ghost small" data-oact="skip">Not now</button></div>
+    <details id="outingFb" style="margin-top:8px"><summary class="hint" style="cursor:pointer">Not quite right? Tell Samvar why</summary>
+      <textarea id="outingFbText" rows="2" style="min-height:0;margin-top:6px" placeholder="e.g. Alice doesn't like comedy · I'm not a parkrun person"></textarea>
+      <div class="row" style="margin-top:6px"><button class="btn small" data-oact="fb">Save as memory</button></div>
+      <div class="hint" id="outingFbNote" style="margin-top:6px"></div></details></div>`;
   el.querySelector('[data-oact="suggest"]')?.addEventListener("click",()=>{ requirePro("Suggested messages are part of Samvar — start your free trial.").then(ok=>{ if(ok) openerSheet(who[0],{plan:`${idea.title}${idea.venue?" at "+idea.venue:""}${idea.when?" ("+idea.when+")":""}`}); }); });
   el.querySelector('[data-oact="next"]').addEventListener("click",()=>{ DB.settings.outing.idx=((o.idx||0)+1)%ideas.length; saveDB(); renderOuting(); });
   el.querySelector('[data-oact="skip"]').addEventListener("click",()=>{ dismiss("outing",7); renderOuting(); });
+  el.querySelector('[data-oact="fb"]').addEventListener("click",()=>outingFeedback(el, idea, core));
+}
+// Feedback on an idea becomes a memory: on the friend ("Alice doesn't like comedy") or on you ("I don't like parkrun").
+async function outingFeedback(el, idea, core){
+  const ta=el.querySelector("#outingFbText"), note=el.querySelector("#outingFbNote"), btn=el.querySelector('[data-oact="fb"]');
+  const text=(ta.value||"").trim(); if(!text) return;
+  if(!await requirePro("Memories are part of Samvar — start your free trial.")) return;
+  btn.disabled=true; note.textContent="Filing…";
+  try{
+    const r=await samvarAI("/v1/feedback",{text, idea:`${idea.title}${idea.venue?" at "+idea.venue:""}`, people:core.map(p=>capName(p))});
+    const saved=[];
+    for(const m of (r.memories||[])){
+      const f=String(m.memory||"").trim(); if(!f) continue;
+      if(m.about==="friend"){ const p=core.find(x=>capName(x).toLowerCase()===String(m.name||"").toLowerCase())||DB.people.find(x=>capName(x).toLowerCase()===String(m.name||"").toLowerCase());
+        if(!p) continue; (p.facts=p.facts||[]).push({f, kind:"likes", ts:Date.now()}); saved.push(`${capName(p)} — ${f}`); }
+      else { (DB.settings.meFacts=DB.settings.meFacts||[]).push({f, ts:Date.now()}); saved.push(`You — ${f}`); }
+    }
+    if(!saved.length){ note.textContent="Couldn't turn that into a memory — try naming who it's about."; btn.disabled=false; return; }
+    DB.settings.outing=null; saveDB(); renderSettingsUI(); renderPeople();
+    note.innerHTML=`Saved: ${saved.map(esc).join(" · ")}. Finding a better idea…`;
+    setTimeout(renderOuting, 900);
+  }catch(e){ note.textContent="Samvar AI couldn't file that just now."; btn.disabled=false; }
 }
 
 /* ---------- Contacts sync: people linked to a card refresh from it on every foreground ---------- */
@@ -1345,6 +1371,10 @@ function renderSettingsUI(){
   const ci=document.getElementById("checkinOn"); if(ci){ ci.checked=DB.settings.checkin!==false; document.getElementById("checkinTime").value=DB.settings.checkinTime||"20:00"; document.getElementById("digestOn").checked=DB.settings.digest!==false; }
   for(const [k,id] of [["inner","wInner"],["invest","wClose"],["warm","wWarm"]]){ const r=document.getElementById(id); if(r){ r.value=(DB.settings.windows||{})[k]||{inner:2,invest:6,warm:13}[k]; document.getElementById(id+"Val").textContent=windowText(k); } }
   const ha=document.getElementById("homeAddr"); if(ha && document.activeElement!==ha) ha.value=DB.settings.home||"";
+  const me=document.getElementById("meFacts"); if(me){ const list=DB.settings.meFacts||[];
+    me.innerHTML=list.length?list.map((f,i)=>`<div class="factline" style="font-size:14px;align-items:center"><span class="fk">📝</span><span style="flex:1">${esc(f.f)}</span><button class="btn ghost small" data-mefact="${i}" style="padding:2px 8px">✕</button></div>`).join("")
+      :`<p class="hint" style="margin:0">Nothing yet. When a "Something to do" idea misses, tell Samvar why and it lands here (e.g. "I don't like parkrun") or on the friend's profile.</p>`;
+    me.querySelectorAll("[data-mefact]").forEach(b=>b.addEventListener("click",()=>{ DB.settings.meFacts.splice(+b.dataset.mefact,1); DB.settings.outing=null; saveDB(); renderSettingsUI(); })); }
   const st=dailyStreak(), pr=document.getElementById("progressStreak"); if(pr) pr.innerHTML=st.streak?`🔥 ${st.streak} net connection day${st.streak===1?"":"s"}${st.loggedToday?"":" — log a conversation today or it drops by one"}`:"0 net connection days — log a conversation today to add one.";
   const mr=document.getElementById("monthReview"); if(mr){ const now=Date.now(), from=now-30*DAY, xs=DB.interactions.filter(x=>x.ts>from), ppl=new Set(xs.flatMap(x=>x.personIds)).size, q=xs.filter(x=>x.depth>=2).length;
     const quiet=DB.people.filter(p=>p.tier!=="notnow"&&TIERS[p.tier]?.cadence).map(p=>({p,l:lastContact(p,now)})).filter(x=>!x.l||now-x.l>45*DAY).sort((a,b)=>(a.l||0)-(b.l||0))[0];
