@@ -482,7 +482,7 @@ function renderRings(){
       <span><b style="color:var(--ink)">${s.label}</b> — ${s.n? `${s.inRhythm} of ${s.n} in rhythm (${Math.round(s.pct*100)}%)` : "no one filed yet"}</span></span>`).join("");
   document.querySelectorAll("#ringsViz .ringseg").forEach(g=>{
     g.addEventListener("pointerenter",ev=>{ const s=stats[+g.dataset.i];
-      showTip(`<b>${s.label}</b> · ${s.inRhythm}/${s.n} contacted within ${TIERS[s.k].cadence} days`,ev.clientX,ev.clientY); });
+      showTip(`<b>${s.label}</b> · ${s.inRhythm}/${s.n} in rhythm (${windowText(s.k)} window)`,ev.clientX,ev.clientY); });
     g.addEventListener("pointerleave",hideTip);
   });
 }
@@ -964,7 +964,7 @@ function nudgeCard(n){
         <span class="status" style="color:${col}"><i style="background:${col}"></i>${lab}</span></div>
         <div class="spacer"></div><span class="badge">${t.label}</span></div>`;
   const why=n.kind==="overdue"
-    ?`Last contact <b>${n.last?fmtAgo(n.last):"never logged"}</b> — your rhythm for this circle is every ${t.cadence} days.`
+    ?`Last contact <b>${n.last?fmtAgo(n.last):"never logged"}</b> — your ${t.label} window is ${windowText(p.tier)}.`
     :n.why;
   const facts=(["overdue","deepen"].includes(n.kind) && (p.facts||[]).length)
     ?`<div class="why">💡 ${p.facts.slice(-2).map(f=>esc(f.f)).join(" · ")}</div>`:"";
@@ -1152,7 +1152,7 @@ async function renderOuting(){
     <div class="nm" style="font-weight:700;font-size:16px;margin-top:6px">${esc(idea.title||"")}</div>
     <div class="meta">${esc([idea.venue,idea.area,idea.when].filter(Boolean).join(" · "))}</div>
     <div class="why" style="margin-top:6px">${esc(idea.why||"")}${who.length?` — with <b>${who.map(p=>esc(capName(p))).join(" and ")}</b>`:""}</div>
-    <div class="btngrid">${who[0]?`<button class="btn small" data-oact="suggest">✨ Suggest it to ${esc(capName(who[0]))}</button>`:""}<button class="btn ghost small" data-oact="next">Another idea</button><button class="btn ghost small" data-oact="skip">Not now</button></div>
+    <div class="btngrid">${who[0]?`<button class="btn small" data-oact="suggest">✨ Suggest it</button>`:""}<button class="btn ghost small" data-oact="next">Another idea</button><button class="btn ghost small" data-oact="skip">Not now</button></div>
     <details id="outingFb" style="margin-top:8px"><summary class="hint" style="cursor:pointer">Not quite right? Tell Samvar why</summary>
       <textarea id="outingFbText" rows="2" style="min-height:0;margin-top:6px" placeholder="e.g. Alice doesn't like comedy · I'm not a parkrun person"></textarea>
       <div class="row" style="margin-top:6px"><button class="btn small" data-oact="fb">Save as memory</button></div>
