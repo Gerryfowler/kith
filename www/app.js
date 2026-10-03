@@ -659,12 +659,12 @@ function contactLinks(p){
   if(t) out.push({k:"call", label:"📞", title:"Call", href:many?"#":`tel:${t}`, pick:many?"call":""});
   if(t) out.push({k:"text", label:"💬", title:"Text", href:many?"#":`sms:${t}`, pick:many?"text":""});
   if(p.email) out.push({k:"email", label:"✉️", title:"Email", href:`mailto:${p.email}`});
-  if(t && p.telIsMobile!==false){ const d=t.replace(/^\+/,"").replace(/^0/, ""); out.push({k:"wa", label:WA_ICON, title:"WhatsApp", href:`https://wa.me/${t.startsWith("+")?t.slice(1):d}`, ext:true}); }
+  if(t){ out.push({k:"wa", label:WA_ICON, title:"WhatsApp", href:`https://wa.me/${waDigits((waNumbers(p)[0]||{number:t}).number)}`, ext:true}); }
   return out;
 }
 // Pick which number when someone has more than one.
-function chooseNumber(p, verb){
-  const nums=phoneList(p);
+function chooseNumber(p, verb){ return chooseNumberFrom(p, verb, phoneList(p)); }
+function chooseNumberFrom(p, verb, nums){
   if(nums.length<=1) return Promise.resolve(nums[0]?nums[0].number:"");
   return new Promise(res=>{
     const d=document.createElement("dialog");
@@ -675,10 +675,25 @@ function chooseNumber(p, verb){
     d.querySelectorAll("[data-num]").forEach(b=>b.addEventListener("click",()=>{ d.close(); d.remove(); res(b.dataset.num); }));
   });
 }
-function waDigits(t){ return t.startsWith("+")?t.slice(1):t.replace(/^0/,""); }
+// WhatsApp needs the full international number. "07…" style numbers get the country code for this phone's region.
+const DIAL={GB:"44",IE:"353",US:"1",CA:"1",AU:"61",NZ:"64",IN:"91",ZA:"27",FR:"33",DE:"49",ES:"34",IT:"39",NL:"31"};
+function homeDial(){ const r=((navigator.language||"en-GB").split("-")[1]||"GB").toUpperCase(); return DIAL[r]||"44"; }
+function waDigits(t){
+  t=telDigits(t);
+  if(t.startsWith("+")) return t.slice(1);
+  if(t.startsWith("00")) return t.slice(2);
+  if(t.startsWith("0")) return homeDial()+t.slice(1);
+  return t;
+}
+// Numbers WhatsApp can reach: anything we have, likely mobiles first (labelled mobile/iPhone, or UK 07/+447).
+function waNumbers(p){
+  const looksMobile=n=>/^(\+?447|07)/.test(telDigits(n.number))||/mobile|iphone|cell/i.test(n.label||"");
+  const all=phoneList(p);
+  return [...all.filter(looksMobile), ...all.filter(n=>!looksMobile(n))];
+}
 // The single "Contact" sheet: every way to reach someone in one place. With `text`, the message is pre-filled.
 function contactMenu(p, text, opts){
-  const t=telDigits(p.tel), mobile=t&&p.telIsMobile!==false, body=text?encodeURIComponent(text):"";
+  const t=telDigits(p.tel), mobile=waNumbers(p).length>0, body=text?encodeURIComponent(text):"";
   const rows=[];
   if(!text) rows.push({k:"write", ico:"✨", label:"Write a message for me"});
   if(t) rows.push({k:"call", ico:"📞", label:"Call"});
@@ -702,7 +717,10 @@ function contactMenu(p, text, opts){
     if(k==="copy"){ try{ await navigator.clipboard.writeText(text); b.lastChild.textContent="Copied ✓"; }catch(e){} return; }
     close();
     if(k==="email"){ location.href=`mailto:${p.email}${text?`?body=${body}`:""}`; return; }
-    if(k==="wa"){ window.open(`https://wa.me/${waDigits(t)}${text?`?text=${body}`:""}`,"_blank","noopener"); return; }
+    if(k==="wa"){
+      const nums=waNumbers(p);
+      const num=nums.length>1?await chooseNumberFrom(p,"WhatsApp",nums):(nums[0]||{}).number; if(!num) return;
+      window.open(`https://wa.me/${waDigits(num)}${text?`?text=${body}`:""}`,"_blank","noopener"); return; }
     const num=await chooseNumber(p, k==="call"?"Call":"Message"); if(!num) return;
     if(k==="call") location.href=`tel:${num}`;
     if(k==="sms"){ const sep=/iPhone|iPad|Macintosh/.test(navigator.userAgent)?"&":"?"; location.href=`sms:${num}${text?`${sep}body=${body}`:""}`; }
