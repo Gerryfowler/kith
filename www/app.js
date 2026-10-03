@@ -843,7 +843,7 @@ function renderHome(){
   const st=dailyStreak(), stEl=document.getElementById("streakLine");
   if(stEl) stEl.innerHTML=st.streak?`🔥 <b>${st.streak}</b> net connection day${st.streak===1?"":"s"}${st.loggedToday?"":" — log a conversation today or it drops by one"}`
     :(DB.interactions.length?`Log a conversation today to add a net connection day.`:"");
-  sparkline(document.getElementById("sparkWrap"), DB.interactions.length?weeklySeries(12):[]);
+  // (score chart removed — score and rings only)
   renderRings();
 
   renderReflection();
@@ -1182,11 +1182,24 @@ async function renderOuting(){
   const o=DB.settings.outing||{};
   const roster=core.map(p=>p.id).sort().join(",");
   const fresh=o.ideas&&o.v===2&&o.home===home&&o.roster===roster&&Date.now()-(o.fetched||0)<7*DAY; // v2 = ideas carry real dates
+  // Ideas are fetched only when asked — never on app open — so a slow web search can't hold anything up.
   if(!fresh){
     if(!entitled()){ el.innerHTML=""; return; }
-    el.innerHTML=`<div class="card t-butter">${head}<div class="why" style="margin-top:6px">Looking for something nearby in the next few weeks…</div></div>`;
-    await fetchOuting(home, core, roster, "");
-    return renderOuting();
+    el.innerHTML=`<div class="card t-butter">${head}
+      <div class="why" style="margin-top:6px">Find a real place or event nearby to enjoy with ${core.length===1?esc(capName(core[0])):"one of your Inner or Close friends"}.</div>
+      <input type="text" id="outingGuide0" style="margin-top:8px" placeholder="Optional: a friend, a kind of thing, or an area">
+      <div class="btnrow"><button class="btn small" id="outingFind">✨ Find ideas</button><button class="btn ghost small" id="outingLater0">Not now</button></div>
+      <div class="hint" id="outingNote0" style="margin-top:6px"></div></div>`;
+    el.querySelector("#outingLater0").addEventListener("click",()=>{ dismiss("outing",7); renderOuting(); });
+    el.querySelector("#outingFind").addEventListener("click",async ()=>{
+      if(!await requirePro("Ideas are part of Samvar — start your free trial.")) return;
+      const b=el.querySelector("#outingFind"), note=el.querySelector("#outingNote0");
+      b.disabled=true; b.textContent="Searching…"; note.textContent="This takes about half a minute — carry on using the app.";
+      const got=await fetchOuting(home, core, roster, el.querySelector("#outingGuide0").value.trim());
+      if(!got){ b.disabled=false; b.textContent="✨ Find ideas"; note.textContent="Couldn't find anything just now — try again or add some guidance."; return; }
+      renderOuting();
+    });
+    return;
   }
   // never show something that has already happened, even from a cached batch
   const ideas=(o.ideas||[]).filter(i=>!/^\d{4}-\d{2}-\d{2}$/.test(i.date||"")||i.date>=todayISO());
@@ -1233,8 +1246,7 @@ async function fetchOuting(home, core, roster, guidance){
     const ideas=((r&&r.ideas)||[]).filter(i=>(i.who||[]).some(n=>names.has(String(n).toLowerCase())))     // only friends who live nearby
       .filter(i=>!/^\d{4}-\d{2}-\d{2}$/.test(i.date||"")||i.date>=today);                                // never in the past
     if(ideas.length){ DB.settings.outing={v:2,home,roster,fetched:Date.now(),ideas,idx:0,seen}; ok=true; }
-    else if(!prev.ideas||prev.v!==2) DB.settings.outing={v:2,home,roster,fetched:Date.now()-6*DAY,ideas:[],idx:0,seen};
-  }catch(e){ if(!prev.ideas||prev.v!==2) DB.settings.outing={v:2,home,roster,fetched:Date.now()-6*DAY,ideas:[],idx:0,seen}; } // retry tomorrow
+  }catch(e){} // retry tomorrow
   saveDB(); outingBusy=false; return ok;
 }
 // Feedback on an idea becomes a memory: on the friend ("Alice doesn't like comedy") or on you ("I don't like parkrun").
@@ -1254,8 +1266,8 @@ async function outingFeedback(el, idea, core){
     }
     if(!saved.length){ note.textContent="Couldn't turn that into a memory — try naming who it's about."; btn.disabled=false; return; }
     DB.settings.outing=null; saveDB(); renderSettingsUI(); renderPeople();
-    note.innerHTML=`Saved: ${saved.map(esc).join(" · ")}. Finding a better idea…`;
-    setTimeout(renderOuting, 900);
+    note.innerHTML=`Saved: ${saved.map(esc).join(" · ")}. Tap “Find ideas” for new suggestions that take this into account.`;
+    setTimeout(renderOuting, 2500);
   }catch(e){ note.textContent="Samvar AI couldn't file that just now."; btn.disabled=false; }
 }
 
