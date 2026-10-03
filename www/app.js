@@ -1106,6 +1106,15 @@ function renderReflection(){
   renderPickLine(pick);
 }
 
+// Claude turns a typed note into a short, useful fact (falls back to the raw text if AI isn't available).
+function todayISO(){ const d=new Date(); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+async function tidyFact(text, about){
+  const raw={fact:text.trim(), kind:"other", followUp:""};
+  if(!entitled()) return raw;
+  try{ const r=await samvarAI("/v1/fact",{text, about:about||"", today:todayISO()}); return (r&&r.fact)?{fact:String(r.fact).trim(), kind:r.kind||"other", followUp:r.followUp||""}:raw; }
+  catch(e){ return raw; }
+}
+
 /* ---------- something to do nearby: one idea a week for your Inner / Close circles ---------- */
 let outingBusy=false;
 async function renderOuting(){
@@ -1134,33 +1143,58 @@ async function renderOuting(){
   const fresh=o.ideas&&o.home===home&&o.roster===roster&&Date.now()-(o.fetched||0)<7*DAY;
   if(!fresh){
     if(!entitled()){ el.innerHTML=""; return; }
-    el.innerHTML=`<div class="card t-butter">${head}<div class="why" style="margin-top:6px">Looking for something nearby this month…</div></div>`;
-    if(outingBusy) return; outingBusy=true;
-    try{
-      const month=new Date().toLocaleDateString("en-GB",{month:"long",year:"numeric"});
-      const r=await samvarAI("/v1/outing",{home, month, me:(DB.settings.meFacts||[]).map(f=>f.f).slice(0,12).join("; "), people:core.slice(0,20).map(p=>({name:capName(p),tier:TIERS[p.tier].label,where:addrLine(p.addr).slice(0,200),facts:(p.facts||[]).map(f=>f.f).slice(0,6).join("; ")}))});
-      const names=new Set(core.map(p=>capName(p).toLowerCase()));
-      const ideas=((r&&r.ideas)||[]).filter(i=>(i.who||[]).some(n=>names.has(String(n).toLowerCase()))); // only ideas tied to a friend who lives nearby
-      DB.settings.outing={home,roster,fetched:Date.now(),ideas,idx:0};
-    }catch(e){ DB.settings.outing={home,roster,fetched:Date.now()-6*DAY,ideas:[],idx:0}; } // retry tomorrow
-    saveDB(); outingBusy=false; return renderOuting();
+    el.innerHTML=`<div class="card t-butter">${head}<div class="why" style="margin-top:6px">Looking for something nearby in the next few weeks…</div></div>`;
+    await fetchOuting(home, core, roster, "");
+    return renderOuting();
   }
-  const ideas=o.ideas||[]; if(!ideas.length){ el.innerHTML=""; return; }
+  // never show something that has already happened, even from a cached batch
+  const ideas=(o.ideas||[]).filter(i=>!/^\d{4}-\d{2}-\d{2}$/.test(i.date||"")||i.date>=todayISO());
+  if(!ideas.length){ if(o.ideas&&o.ideas.length){ DB.settings.outing=null; saveDB(); return renderOuting(); } el.innerHTML=""; return; }
   const idea=ideas[(o.idx||0)%ideas.length];
   const who=(idea.who||[]).map(n=>core.find(p=>capName(p).toLowerCase()===String(n).toLowerCase()||p.name.toLowerCase()===String(n).toLowerCase())).filter(Boolean);
   el.innerHTML=`<div class="card t-butter">${head}
     <div class="nm" style="font-weight:700;font-size:16px;margin-top:6px">${esc(idea.title||"")}</div>
     <div class="meta">${esc([idea.venue,idea.area,idea.when].filter(Boolean).join(" · "))}</div>
     <div class="why" style="margin-top:6px">${esc(idea.why||"")}${who.length?` — with <b>${who.map(p=>esc(capName(p))).join(" and ")}</b>`:""}</div>
-    <div class="btngrid">${who[0]?`<button class="btn small" data-oact="suggest">✨ Suggest it</button>`:""}<button class="btn ghost small" data-oact="next">Another idea</button><button class="btn ghost small" data-oact="skip">Not now</button></div>
+    <div class="btngrid">${who[0]?`<button class="btn small" data-oact="suggest">✨ Suggest it</button>`:""}<button class="btn ghost small" data-oact="next">${ideas.length>1?`Next idea (${((o.idx||0)%ideas.length)+1}/${ideas.length})`:"Only idea"}</button><button class="btn ghost small" data-oact="skip">Not now</button></div>
+    <details id="outingNew" style="margin-top:8px"><summary class="hint" style="cursor:pointer">None of these? Get three new ideas</summary>
+      <input type="text" id="outingGuide" style="margin-top:6px" placeholder="Optional: a friend, a kind of thing, or an area — e.g. “something with Tom”, “live music”, “near Brixton”">
+      <div class="row" style="margin-top:6px"><button class="btn small" data-oact="regen">✨ Find new ideas</button></div>
+      <div class="hint" id="outingNewNote" style="margin-top:6px"></div></details>
     <details id="outingFb" style="margin-top:8px"><summary class="hint" style="cursor:pointer">Not quite right? Tell Samvar why</summary>
       <textarea id="outingFbText" rows="2" style="min-height:0;margin-top:6px" placeholder="e.g. Alice doesn't like comedy · I'm not a parkrun person"></textarea>
       <div class="row" style="margin-top:6px"><button class="btn small" data-oact="fb">Save as memory</button></div>
       <div class="hint" id="outingFbNote" style="margin-top:6px"></div></details></div>`;
   el.querySelector('[data-oact="suggest"]')?.addEventListener("click",()=>{ requirePro("Suggested messages are part of Samvar — start your free trial.").then(ok=>{ if(ok) openerSheet(who[0],{plan:`${idea.title}${idea.venue?" at "+idea.venue:""}${idea.when?" ("+idea.when+")":""}`}); }); });
   el.querySelector('[data-oact="next"]').addEventListener("click",()=>{ DB.settings.outing.idx=((o.idx||0)+1)%ideas.length; saveDB(); renderOuting(); });
+  el.querySelector('[data-oact="regen"]').addEventListener("click",async ()=>{
+    if(!await requirePro("Ideas are part of Samvar — start your free trial.")) return;
+    const b=el.querySelector('[data-oact="regen"]'), note=el.querySelector("#outingNewNote"), guide=el.querySelector("#outingGuide").value.trim();
+    b.disabled=true; note.textContent="Searching for three new ideas…";
+    const got=await fetchOuting(home, core, roster, guide);
+    if(!got){ b.disabled=false; note.textContent="Couldn't find anything new just now — try different guidance."; return; }
+    renderOuting();
+  });
   el.querySelector('[data-oact="skip"]').addEventListener("click",()=>{ dismiss("outing",7); renderOuting(); });
   el.querySelector('[data-oact="fb"]').addEventListener("click",()=>outingFeedback(el, idea, core));
+}
+// Fetch three ideas. Guidance steers it; ideas already shown are sent so they aren't repeated; past-dated events are dropped.
+async function fetchOuting(home, core, roster, guidance){
+  if(outingBusy) return false; outingBusy=true;
+  const prev=DB.settings.outing||{};
+  const seen=[...new Set([...(prev.seen||[]), ...(prev.ideas||[]).map(i=>i.title)])].slice(-30);
+  let ok=false;
+  try{
+    const month=new Date().toLocaleDateString("en-GB",{month:"long",year:"numeric"});
+    const r=await samvarAI("/v1/outing",{home, month, today:todayISO(), guidance, seen, me:(DB.settings.meFacts||[]).map(f=>f.f).slice(0,12).join("; "), people:core.slice(0,20).map(p=>({name:capName(p),tier:TIERS[p.tier].label,where:addrLine(p.addr).slice(0,200),facts:(p.facts||[]).map(f=>f.f).slice(0,6).join("; ")}))});
+    const names=new Set(core.map(p=>capName(p).toLowerCase()));
+    const today=todayISO();
+    const ideas=((r&&r.ideas)||[]).filter(i=>(i.who||[]).some(n=>names.has(String(n).toLowerCase())))     // only friends who live nearby
+      .filter(i=>!/^\d{4}-\d{2}-\d{2}$/.test(i.date||"")||i.date>=today);                                // never in the past
+    if(ideas.length){ DB.settings.outing={home,roster,fetched:Date.now(),ideas,idx:0,seen}; ok=true; }
+    else if(!prev.ideas) DB.settings.outing={home,roster,fetched:Date.now()-6*DAY,ideas:[],idx:0,seen};
+  }catch(e){ if(!prev.ideas) DB.settings.outing={home,roster,fetched:Date.now()-6*DAY,ideas:[],idx:0,seen}; } // retry tomorrow
+  saveDB(); outingBusy=false; return ok;
 }
 // Feedback on an idea becomes a memory: on the friend ("Alice doesn't like comedy") or on you ("I don't like parkrun").
 async function outingFeedback(el, idea, core){
@@ -1373,7 +1407,7 @@ function renderSettingsUI(){
   const ha=document.getElementById("homeAddr"); if(ha && document.activeElement!==ha) ha.value=DB.settings.home||"";
   const me=document.getElementById("meFacts"); if(me){ const list=DB.settings.meFacts||[];
     me.innerHTML=list.length?list.map((f,i)=>`<div class="factline" style="font-size:14px;align-items:center"><span class="fk">📝</span><span style="flex:1">${esc(f.f)}</span><button class="btn ghost small" data-mefact="${i}" style="padding:2px 8px">✕</button></div>`).join("")
-      :`<p class="hint" style="margin:0">Nothing yet. When a "Something to do" idea misses, tell Samvar why and it lands here (e.g. "I don't like parkrun") or on the friend's profile.</p>`;
+      :`<p class="hint" style="margin:0">Nothing yet. Add your likes and dislikes below, or tell Samvar why a "Something to do" idea missed and it lands here.</p>`;
     me.querySelectorAll("[data-mefact]").forEach(b=>b.addEventListener("click",()=>{ DB.settings.meFacts.splice(+b.dataset.mefact,1); DB.settings.outing=null; saveDB(); renderSettingsUI(); })); }
   const st=dailyStreak(), pr=document.getElementById("progressStreak"); if(pr) pr.innerHTML=st.streak?`🔥 ${st.streak} net connection day${st.streak===1?"":"s"}${st.loggedToday?"":" — log a conversation today or it drops by one"}`:"0 net connection days — log a conversation today to add one.";
   const mr=document.getElementById("monthReview"); if(mr){ const now=Date.now(), from=now-30*DAY, xs=DB.interactions.filter(x=>x.ts>from), ppl=new Set(xs.flatMap(x=>x.personIds)).size, q=xs.filter(x=>x.depth>=2).length;
@@ -1470,11 +1504,17 @@ function personSheet(pid){
     } else st.textContent="Address removed.";
     renderAll();
   });
-  dlg.querySelector("#factAddBtn").addEventListener("click",()=>{
-    const v=dlg.querySelector("#factAdd").value.trim(); if(!v) return;
-    p.facts=p.facts||[]; p.facts.push({f:v,kind:"other",ts:Date.now()});
+  const addPersonFact=async ()=>{
+    const inp=dlg.querySelector("#factAdd"), btn=dlg.querySelector("#factAddBtn"), v=inp.value.trim(); if(!v) return;
+    btn.disabled=true; btn.textContent="Tidying…";
+    const t=await tidyFact(v, capName(p));
+    const f={f:t.fact,kind:t.kind,ts:Date.now()};
+    if(/^\d{4}-\d{2}-\d{2}$/.test(t.followUp)) f.followUp=new Date(t.followUp+"T09:00").getTime();
+    p.facts=p.facts||[]; p.facts.push(f);
     saveDB(); dlg.close(); dlg.remove(); personSheet(pid);
-  });
+  };
+  dlg.querySelector("#factAddBtn").addEventListener("click",addPersonFact);
+  dlg.querySelector("#factAdd").addEventListener("keydown",e=>{ if(e.key==="Enter"){ e.preventDefault(); addPersonFact(); } });
   dlg.querySelectorAll("[data-xedit]").forEach(row=>row.addEventListener("click",()=>{
     dlg.close(); dlg.remove(); editInteraction(row.dataset.xedit);
   }));
@@ -1704,6 +1744,15 @@ document.getElementById("checkinTime")?.addEventListener("change",e=>{ DB.settin
 document.getElementById("digestOn")?.addEventListener("change",e=>{ DB.settings.digest=e.target.checked; saveDB(); window.SamvarNative?.scheduleNudges(); });
 document.getElementById("checkinNow")?.addEventListener("click",checkinSheet);
 for(const [k,id] of [["inner","wInner"],["invest","wClose"],["warm","wWarm"]]){ const r=document.getElementById(id); if(r) r.addEventListener("input",e=>{ (DB.settings.windows=DB.settings.windows||{})[k]=+e.target.value; document.getElementById(id+"Val").textContent=windowText(k); saveDB(); renderAll(); window.SamvarNative?.scheduleNudges(); }); }
+const addMeFact=async ()=>{
+  const inp=document.getElementById("meFactAdd"), btn=document.getElementById("meFactAddBtn"), v=(inp&&inp.value||"").trim(); if(!v) return;
+  btn.disabled=true; btn.textContent="Tidying…";
+  const t=await tidyFact(v, "");
+  (DB.settings.meFacts=DB.settings.meFacts||[]).push({f:t.fact, ts:Date.now()});
+  DB.settings.outing=null; saveDB(); inp.value=""; btn.disabled=false; btn.textContent="Add"; renderSettingsUI(); renderOuting();
+};
+document.getElementById("meFactAddBtn")?.addEventListener("click",addMeFact);
+document.getElementById("meFactAdd")?.addEventListener("keydown",e=>{ if(e.key==="Enter"){ e.preventDefault(); addMeFact(); } });
 document.getElementById("homeSave")?.addEventListener("click",()=>{ DB.settings.home=document.getElementById("homeAddr").value.trim(); DB.settings.outing=null; DB.settings.dismissed&&delete DB.settings.dismissed.outing; saveDB(); renderAll(); });
 document.getElementById("nudgePreview").addEventListener("click",()=>{
   const n=nudgeText(), next=nextNudgeTimes(1)[0];
