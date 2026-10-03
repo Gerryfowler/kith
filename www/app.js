@@ -662,6 +662,52 @@ function contactLinks(p){
   if(t && p.telIsMobile!==false){ const d=t.replace(/^\+/,"").replace(/^0/, ""); out.push({k:"wa", label:WA_ICON, title:"WhatsApp", href:`https://wa.me/${t.startsWith("+")?t.slice(1):d}`, ext:true}); }
   return out;
 }
+// Pick which number when someone has more than one.
+function chooseNumber(p, verb){
+  const nums=phoneList(p);
+  if(nums.length<=1) return Promise.resolve(nums[0]?nums[0].number:"");
+  return new Promise(res=>{
+    const d=document.createElement("dialog");
+    d.innerHTML=`<h2 style="font-size:17px;margin-bottom:10px">${esc(verb)} ${esc(capName(p))} on…</h2>
+      ${nums.map(n=>`<button class="btn secondary" data-num="${esc(n.number)}" style="width:100%;margin-bottom:8px;text-align:left">${esc(n.label)} · ${esc(n.number)}</button>`).join("")}
+      <button class="btn ghost small" data-num="">Cancel</button>`;
+    document.body.appendChild(d); d.showModal();
+    d.querySelectorAll("[data-num]").forEach(b=>b.addEventListener("click",()=>{ d.close(); d.remove(); res(b.dataset.num); }));
+  });
+}
+function waDigits(t){ return t.startsWith("+")?t.slice(1):t.replace(/^0/,""); }
+// The single "Contact" sheet: every way to reach someone in one place. With `text`, the message is pre-filled.
+function contactMenu(p, text, opts){
+  const t=telDigits(p.tel), mobile=t&&p.telIsMobile!==false, body=text?encodeURIComponent(text):"";
+  const rows=[];
+  if(!text) rows.push({k:"write", ico:"✨", label:"Write a message for me"});
+  if(t) rows.push({k:"call", ico:"📞", label:"Call"});
+  if(t) rows.push({k:"sms", ico:"💬", label:"Messages"});
+  if(mobile) rows.push({k:"wa", ico:WA_ICON, label:"WhatsApp"});
+  if(p.email) rows.push({k:"email", ico:"✉️", label:"Email"});
+  if(text) rows.push({k:"copy", ico:"📋", label:"Copy message"});
+  const d=document.createElement("dialog"); d.className="sheet";
+  d.innerHTML=`<h2 style="font-size:18px;margin-bottom:4px">Contact ${esc(capName(p))}</h2>
+    ${text?`<p class="hint" style="margin:0 0 10px">“${esc(text.length>90?text.slice(0,90)+"…":text)}”</p>`:`<div style="height:6px"></div>`}
+    ${!t&&!p.email?`<p class="hint" style="margin:0 0 10px">No number or email saved — add ${esc(capName(p))} from Contacts for one-tap calls and messages.</p>`:""}
+    <div class="menu">${rows.map(r=>`<button class="menurow" data-c="${r.k}"><span class="mi">${r.ico}</span>${esc(r.label)}</button>`).join("")}</div>
+    <button class="btn ghost" data-c="cancel" style="width:100%;margin-top:10px">Cancel</button>`;
+  document.body.appendChild(d); d.showModal();
+  const close=()=>{ d.close(); d.remove(); };
+  d.addEventListener("click",e=>{ if(e.target===d) close(); });
+  d.querySelectorAll("[data-c]").forEach(b=>b.addEventListener("click",async ()=>{
+    const k=b.dataset.c;
+    if(k==="cancel") return close();
+    if(k==="write"){ close(); return requirePro("Suggested messages are part of Samvar — start your free trial.").then(ok=>{ if(ok) openerSheet(p,opts||{}); }); }
+    if(k==="copy"){ try{ await navigator.clipboard.writeText(text); b.lastChild.textContent="Copied ✓"; }catch(e){} return; }
+    close();
+    if(k==="email"){ location.href=`mailto:${p.email}${text?`?body=${body}`:""}`; return; }
+    if(k==="wa"){ window.open(`https://wa.me/${waDigits(t)}${text?`?text=${body}`:""}`,"_blank","noopener"); return; }
+    const num=await chooseNumber(p, k==="call"?"Call":"Message"); if(!num) return;
+    if(k==="call") location.href=`tel:${num}`;
+    if(k==="sms"){ const sep=/iPhone|iPad|Macintosh/.test(navigator.userAgent)?"&":"?"; location.href=`sms:${num}${text?`${sep}body=${body}`:""}`; }
+  }));
+}
 function contactBtns(p){
   const links=contactLinks(p); if(!links.length) return "";
   return links.map((l,i)=>`<a class="btn ${i?"ghost ":""}small" href="${l.href}" title="${esc(l.title||"")}" aria-label="${esc(l.title||"")}"${l.pick?` data-pick="${l.pick}" data-pid="${p.id}"`:""}${l.ext?' target="_blank" rel="noopener"':""}>${l.label}</a>`).join("");
@@ -821,7 +867,7 @@ function renderHome(){
       <div class="meta">${x.ai?`<span class="badge" style="font-size:10px;padding:1px 6px;margin-right:4px">✨ Claude</span>`:""}${DEPTHS[x.depth-1].label} · ${CHANNELS[x.channel].label} · ${fmtAgo(x.ts)}${x.place?` · 📍 ${esc(x.place)}`:""}</div>
       ${x.note?`<div class="meta" style="color:var(--ink);margin-top:2px">${esc(x.note.slice(0,110))}${x.note.length>110?"…":""}</div>`:""}
       ${(x.facts||[]).length?`<div class="meta" style="margin-top:2px">💡 ${x.facts.slice(0,2).map(f=>esc(f.fact)).join(" · ")}</div>`:""}</div>
-      <div class="spacer"></div><span class="badge">+${Math.round(interactionPoints(x))} smiles</span><button class="xdel" data-x="${x.id}">✕</button></div>`;
+      <div class="spacer"></div><button class="xdel" data-x="${x.id}">✕</button></div>`;
   }).join(""):`<div class="demo"><div class="person" style="cursor:default"><div class="avatar" style="background:var(--accent-soft)">SO</div><div><div class="nm">Sam Ortiz</div><div class="meta">Quality time · In person · yesterday</div><div class="meta" style="color:var(--ink)">Long lunch, talked about his move to Bristol</div><div class="meta">💡 daughter Iris starting school</div></div><div class="spacer"></div><span class="badge">+50 smiles</span></div>
     <p class="hint" style="margin:8px 0 0">Your conversations will look like this. Log the first one from the Log tab — just say what happened.</p></div>`;
   rec.querySelectorAll("[data-edit]").forEach(row=>row.addEventListener("click",()=>editInteraction(row.dataset.edit)));
@@ -916,19 +962,21 @@ function todaysPick(asOf){
 let pickLineBusy=false;
 function pickHasInput(n){ const p=n.p; return n.reason==="date"||n.reason==="followup"||(p.facts||[]).length>0||!!townFromAddr(p.addr); }
 function pickOpts(n){ return n.reason==="followup"?{followUp:n.fact.f}:n.reason==="date"?{birthday:{label:n.label,days:n.days}}:{}; }
+// When Claude has drafted a message, its own Contact button takes over — hide the card's duplicate.
+function showPickLine(el, text){ el.innerHTML=pickLineHtml(text); const c=el.closest(".sugg")?.querySelector('.btnrow>[data-act="contact"]'); if(c) c.style.display="none"; bindNudgeButtons(document.getElementById("reflect")); }
 function pickLineHtml(text){
   return `<div style="margin-top:10px;padding:10px 12px;border-radius:12px;background:var(--tint-butter)"><div class="hint" style="margin:0 0 4px"><span class="badge" style="font-size:10px;padding:1px 6px">✨ Claude</span> suggested message</div>
     <div style="font-size:15px;line-height:1.45">“${esc(text)}”</div>
-    <div class="btngrid"><button class="btn small" data-act="sendline">Send</button><button class="btn ghost small" data-act="editline">Edit / more</button><button class="btn ghost small" data-act="copyline">Copy</button></div></div>`;
+    <div class="btnrow"><button class="btn small" data-act="contactline">Contact</button><button class="btn ghost small" data-act="editline">Other ideas</button></div></div>`;
 }
 async function renderPickLine(n){
   const el=document.getElementById("pickLine"); if(!el||!n||!pickHasInput(n)||!entitled()) return;
   const day=dayKeyOf(Date.now()), c=DB.settings.pickLine;
-  if(c&&c.pid===n.p.id&&c.day===day&&c.reason===n.reason&&c.text){ el.innerHTML=pickLineHtml(c.text); bindNudgeButtons(document.getElementById("reflect")); return; }
+  if(c&&c.pid===n.p.id&&c.day===day&&c.reason===n.reason&&c.text){ showPickLine(el, c.text); return; }
   if(pickLineBusy) return; pickLineBusy=true;
   el.innerHTML=`<div class="hint" style="margin-top:8px">✨ Drafting a message…</div>`;
   try{ const arr=await aiOpeners(n.p, pickOpts(n)); const el2=document.getElementById("pickLine");
-    if(arr[0]){ DB.settings.pickLine={pid:n.p.id,day,reason:n.reason,text:arr[0]}; saveDB(); if(el2){ el2.innerHTML=pickLineHtml(arr[0]); bindNudgeButtons(document.getElementById("reflect")); } }
+    if(arr[0]){ DB.settings.pickLine={pid:n.p.id,day,reason:n.reason,text:arr[0]}; saveDB(); if(el2) showPickLine(el2, arr[0]); }
     else if(el2) el2.innerHTML=""; }
   catch(e){ const el2=document.getElementById("pickLine"); if(el2) el2.innerHTML=""; }
   finally{ pickLineBusy=false; }
@@ -938,7 +986,7 @@ function pickBlock(n){
   const cap=x=>x.charAt(0).toUpperCase()+x.slice(1);
   const why=n.reason==="date"?`${n.label==="birthday"?"🎂 Birthday":"📅 "+esc(cap(n.label))} <b>${n.days===0?"today":n.days===1?"tomorrow":"in "+n.days+" days"}</b> — get in first.`
     :n.reason==="followup"?`${esc(n.fact.f)} — a good moment to ask how it went.`
-    :n.never?`Added ${fmtAgo(p.added||Date.now())} and nothing logged since — a first message is the easiest one to send.`
+    :n.never?`Added ${fmtAgo(p.added||Date.now())} and nothing logged since — a quick hello is the easiest start.`
     :n.overdue?`Already <b>${fmtAgo(n.last)}</b> since you spoke — past the ${windowText(p.tier)} window for your ${n.t.label} circle.`
     :`Last contact <b>${fmtAgo(n.last)}</b>. In about <b>${days} day${days===1?"":"s"}</b> they slip out of your ${n.t.rhythm} rhythm — a small message now keeps it easy.`;
   const facts=(p.facts||[]).length?`<div class="why">💡 ${p.facts.slice(-2).map(f=>esc(f.f)).join(" · ")}</div>`:"";
@@ -948,8 +996,8 @@ function pickBlock(n){
       <span class="status" style="color:${h.color}"><i style="background:${h.color}"></i>${h.label}</span></div>
       <div class="spacer"></div><span class="badge">${n.t.label}</span></div>
     <div class="why">${why}</div>${facts}<div id="pickLine"></div>
-    <div class="btngrid">${contactBtns(p)}<button class="btn ${contactLinks(p).length?"ghost ":""}small" data-act="opener">✨ Opener</button>
-      <button class="btn ghost small" data-act="log">✓ Log it</button><button class="btn ghost small" data-act="dismiss" data-days="1">Skip today</button></div>
+    <div class="btnrow"><button class="btn small" data-act="contact">Contact</button>
+      <button class="btn ghost small" data-act="log">✓ Log it</button><button class="btn ghost small" data-act="dismiss" data-days="1">Skip</button></div>
   </div>`;
 }
 function nudgeCard(n){
@@ -973,11 +1021,11 @@ function nudgeCard(n){
       <button class="btn ghost small" data-act="dismiss" data-days="60">Keep as is</button>`;
   else if(n.kind==="introduce") row=`<button class="btn small" data-act="opener">✨ Suggest it to ${esc(capName(p))}</button>
       <button class="btn ghost small" data-act="dismiss" data-days="30">Not now</button>`;
-  else row=`${contactBtns(p)}<button class="btn ${contactLinks(p).length?"ghost ":""}small" data-act="opener">✨ Opener</button>
+  else row=`<button class="btn small" data-act="contact">Contact</button>
       <button class="btn ghost small" data-act="log">✓ Log it</button>
       <button class="btn ghost small" data-act="${n.kind==="overdue"?"snooze":"dismiss"}" data-days="14">${n.kind==="overdue"?"Snooze":"Not now"}</button>`;
   return `<div class="sugg" data-pid="${p.id}" data-key="${n.key}" data-kind="${n.kind}"${n.q?` data-qid="${n.q.id}"`:""}${n.fact?` data-fu="${esc(n.fact.f)}"`:""}>
-    ${head}<div class="why">${why}</div>${facts}<div class="btngrid">${row}</div></div>`;
+    ${head}<div class="why">${why}</div>${facts}<div class="btnrow">${row}</div></div>`;
 }
 function bindNudgeButtons(root){
   root.querySelectorAll(".sugg").forEach(card=>{
@@ -986,8 +1034,8 @@ function bindNudgeButtons(root){
     card.querySelectorAll("button[data-act]").forEach(b=>{ if(b.dataset.bound) return; b.dataset.bound="1"; b.addEventListener("click",()=>{
       const act=b.dataset.act;
       const opts=()=>({q, deepen:card.dataset.kind==="deepen", followUp:card.dataset.fu||"", birthday:card.dataset.dlabel?{label:card.dataset.dlabel,days:+card.dataset.ddays}:undefined});
-      if(act==="sendline"){ const c=DB.settings.pickLine; if(c&&c.text) sendMessage(p,c.text); }
-      if(act==="copyline"){ const c=DB.settings.pickLine; if(c&&c.text){ navigator.clipboard?.writeText(c.text); b.textContent="Copied ✓"; } }
+      if(act==="contactline"){ const c=DB.settings.pickLine; contactMenu(p, c&&c.text||"", opts()); }
+      if(act==="contact") contactMenu(p, "", opts());
       if(act==="editline"){ requirePro("Suggested messages are part of Samvar — start your free trial.").then(ok=>{ if(ok) openerSheet(p,opts()); }); }
       if(act==="log"){ switchPage("log");
         const ta=document.getElementById("logText"); ta.value=`With ${p.name} — `; ta.focus(); }
@@ -1059,19 +1107,12 @@ async function openerSheet(p,opts={}){
         :`Simple starters. Add an API key under You for ones that use what you know about ${esc(capName(p))}.`}</p>
       ${lines.map((l,i)=>`<div class="card" style="padding:12px;margin-bottom:8px">
         <textarea data-op="${i}" style="min-height:88px;resize:none">${esc(l)}</textarea>
-        <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
-          <button class="btn small" data-send="${i}">${t?"Send":"Share"}</button>
-          ${t&&t.startsWith("+")?`<button class="btn ghost small" data-wa="${i}">WhatsApp</button>`:""}
-          <button class="btn ghost small" data-copy="${i}">Copy</button></div></div>`).join("")}
-      <div style="display:flex;gap:8px;margin-top:4px;flex-wrap:wrap">
-        <button class="btn ghost small" id="opLogged">✓ I sent it — log it</button>
+        <button class="btn small" data-use="${i}" style="margin-top:8px">Contact</button></div>`).join("")}
+      <div class="btnrow" style="margin-top:4px">
+        <button class="btn ghost small" id="opLogged">✓ Log it</button>
         <button class="btn ghost small" id="opClose">Close</button></div>`;
     const txt=i=>dlg.querySelector(`[data-op="${i}"]`).value.trim();
-    dlg.querySelectorAll("[data-send]").forEach(b=>b.addEventListener("click",()=>{ sent=+b.dataset.send; sendMessage(p,txt(sent)); }));
-    dlg.querySelectorAll("[data-wa]").forEach(b=>b.addEventListener("click",()=>{ sent=+b.dataset.wa;
-      window.open(`https://wa.me/${t.slice(1)}?text=${encodeURIComponent(txt(sent))}`,"_blank","noopener"); }));
-    dlg.querySelectorAll("[data-copy]").forEach(b=>b.addEventListener("click",async()=>{ sent=+b.dataset.copy;
-      try{ await navigator.clipboard.writeText(txt(sent)); b.textContent="Copied ✓"; }catch(e){ b.textContent="Select & copy"; } }));
+    dlg.querySelectorAll("[data-use]").forEach(b=>b.addEventListener("click",()=>{ sent=+b.dataset.use; contactMenu(p, txt(sent)); }));
     dlg.querySelector("#opLogged").addEventListener("click",()=>{ logMessageSent(p,txt(sent)); dlg.close(); dlg.remove(); });
     dlg.querySelector("#opClose").addEventListener("click",()=>{ dlg.close(); dlg.remove(); });
   };
@@ -1140,7 +1181,7 @@ async function renderOuting(){
   }
   const o=DB.settings.outing||{};
   const roster=core.map(p=>p.id).sort().join(",");
-  const fresh=o.ideas&&o.home===home&&o.roster===roster&&Date.now()-(o.fetched||0)<7*DAY;
+  const fresh=o.ideas&&o.v===2&&o.home===home&&o.roster===roster&&Date.now()-(o.fetched||0)<7*DAY; // v2 = ideas carry real dates
   if(!fresh){
     if(!entitled()){ el.innerHTML=""; return; }
     el.innerHTML=`<div class="card t-butter">${head}<div class="why" style="margin-top:6px">Looking for something nearby in the next few weeks…</div></div>`;
@@ -1154,9 +1195,9 @@ async function renderOuting(){
   const who=(idea.who||[]).map(n=>core.find(p=>capName(p).toLowerCase()===String(n).toLowerCase()||p.name.toLowerCase()===String(n).toLowerCase())).filter(Boolean);
   el.innerHTML=`<div class="card t-butter">${head}
     <div class="nm" style="font-weight:700;font-size:16px;margin-top:6px">${esc(idea.title||"")}</div>
-    <div class="meta">${esc([idea.venue,idea.area,idea.when].filter(Boolean).join(" · "))}</div>
+    <div class="meta">${esc([idea.venue,idea.area,/^\d{4}-\d{2}-\d{2}$/.test(idea.date||"")?new Date(idea.date+"T12:00").toLocaleDateString("en-GB",{weekday:"short",day:"numeric",month:"short"}):idea.when].filter(Boolean).join(" · "))}</div>
     <div class="why" style="margin-top:6px">${esc(idea.why||"")}${who.length?` — with <b>${who.map(p=>esc(capName(p))).join(" and ")}</b>`:""}</div>
-    <div class="btngrid">${who[0]?`<button class="btn small" data-oact="suggest">✨ Suggest it</button>`:""}<button class="btn ghost small" data-oact="next">${ideas.length>1?`Next idea (${((o.idx||0)%ideas.length)+1}/${ideas.length})`:"Only idea"}</button><button class="btn ghost small" data-oact="skip">Not now</button></div>
+    <div class="btnrow">${who[0]?`<button class="btn small" data-oact="suggest">✨ Suggest it</button>`:""}<button class="btn ghost small" data-oact="next">${ideas.length>1?`Next (${((o.idx||0)%ideas.length)+1}/${ideas.length})`:"Only idea"}</button><button class="btn ghost small" data-oact="skip">Not now</button></div>
     <details id="outingNew" style="margin-top:8px"><summary class="hint" style="cursor:pointer">None of these? Get three new ideas</summary>
       <input type="text" id="outingGuide" style="margin-top:6px" placeholder="Optional: a friend, a kind of thing, or an area — e.g. “something with Tom”, “live music”, “near Brixton”">
       <div class="row" style="margin-top:6px"><button class="btn small" data-oact="regen">✨ Find new ideas</button></div>
@@ -1191,9 +1232,9 @@ async function fetchOuting(home, core, roster, guidance){
     const today=todayISO();
     const ideas=((r&&r.ideas)||[]).filter(i=>(i.who||[]).some(n=>names.has(String(n).toLowerCase())))     // only friends who live nearby
       .filter(i=>!/^\d{4}-\d{2}-\d{2}$/.test(i.date||"")||i.date>=today);                                // never in the past
-    if(ideas.length){ DB.settings.outing={home,roster,fetched:Date.now(),ideas,idx:0,seen}; ok=true; }
-    else if(!prev.ideas) DB.settings.outing={home,roster,fetched:Date.now()-6*DAY,ideas:[],idx:0,seen};
-  }catch(e){ if(!prev.ideas) DB.settings.outing={home,roster,fetched:Date.now()-6*DAY,ideas:[],idx:0,seen}; } // retry tomorrow
+    if(ideas.length){ DB.settings.outing={v:2,home,roster,fetched:Date.now(),ideas,idx:0,seen}; ok=true; }
+    else if(!prev.ideas||prev.v!==2) DB.settings.outing={v:2,home,roster,fetched:Date.now()-6*DAY,ideas:[],idx:0,seen};
+  }catch(e){ if(!prev.ideas||prev.v!==2) DB.settings.outing={v:2,home,roster,fetched:Date.now()-6*DAY,ideas:[],idx:0,seen}; } // retry tomorrow
   saveDB(); outingBusy=false; return ok;
 }
 // Feedback on an idea becomes a memory: on the friend ("Alice doesn't like comedy") or on you ("I don't like parkrun").
@@ -1314,7 +1355,7 @@ function nudgeText(asOf){
     return {title:`${ico} ${capName(pick.p)}'s ${pick.label} ${when}`, body:pick.days===0?"A message now will make their day.":"Get in first.", pid:pick.p.id}; }
   if(pick&&pick.reason==="followup") return {title:`Ask ${capName(pick.p)} how it went`, body:pick.fact.f, pid:pick.p.id};
   if(pick){ const p=pick.p, t=pick.t;
-    const body=pick.never?`Nothing logged with ${capName(p)} since you added them. A first hello is the easiest message to send.`
+    const body=pick.never?`Nothing logged with ${capName(p)} since you added them. A quick hello is the easiest start.`
       :pick.overdue?`It's been ${fmtAgo(pick.last)} — past your ${windowText(p.tier)} window. One message today keeps it easy.`
       :`${Math.max(1,Math.round(pick.left))} day${Math.round(pick.left)===1?"":"s"} before they slip past your ${windowText(p.tier)} window. A small message now keeps it easy.`;
     return {title:`${capName(p)} is next`, body, pid:p.id}; }
@@ -1462,8 +1503,7 @@ function personSheet(pid){
         ${(p.urls||[]).length?`<div class="meta">${p.urls.slice(0,3).map(u=>`<a href="${esc(u)}" target="_blank" rel="noopener" style="color:var(--accent)">${esc(u.replace(/^https?:\/\/(www\.)?/,"").split("/")[0])}</a>`).join(" · ")}</div>`:""}</div>
       <button class="btn small" id="dlgCloseTop" style="flex:none;background:var(--good)">Done</button></div>
     ${sec("Circle",`<div class="seg" style="margin:0">${Object.entries(TIERS).map(([k,t])=>`<button data-tier="${k}" class="${p.tier===k?"on":""}">${t.label}</button>`).join("")}</div>`)}
-    ${sec("Reach them",`<button class="btn" id="pOpener" style="margin-bottom:10px">✨ Suggest a message</button>
-      ${contactBtns(p)?`<div class="btngrid reachrow">${contactBtns(p)}</div>`:`<div class="hint" style="margin:0">No number yet — add ${esc(capName(p))} from Contacts to get one-tap Call, Text and WhatsApp buttons.</div>`}
+    ${sec("Reach them",`<button class="btn" id="pOpener" style="width:100%">Contact ${esc(capName(p))}</button>
       ${p.contactId?`<div class="hint" style="margin-top:8px">Linked to Contacts — numbers, email, address, photo and birthday refresh automatically.</div>`:""}`)}
     ${sec("Address / area",`<div style="display:flex;gap:8px;align-items:flex-start">
       <textarea id="paddr" rows="${Math.min(5,Math.max(2,String(p.addr||"").split("\n").length))}" placeholder="Street\nTown\nPostcode" style="min-height:0;resize:none;line-height:1.4">${esc(p.addr||"")}</textarea>
@@ -1491,7 +1531,7 @@ function personSheet(pid){
     p.facts.splice(+b.dataset.fdel,1); saveDB(); dlg.close(); dlg.remove(); personSheet(pid);
   }));
   dlg.querySelector("#dlgCloseTop").addEventListener("click",()=>{ dlg.close(); dlg.remove(); });
-  dlg.querySelector("#pOpener").addEventListener("click",()=>{ requirePro("Suggested messages are part of Samvar — start your free trial.").then(ok=>{ if(ok) openerSheet(p,{}); }); });
+  dlg.querySelector("#pOpener").addEventListener("click",()=>contactMenu(p,""));
   dlg.querySelector("#paddrSave").addEventListener("click",async ()=>{
     const v=dlg.querySelector("#paddr").value.split(/\n|,\s*/).map(x=>x.trim()).filter(Boolean).join("\n");
     const st=dlg.querySelector("#paddrStatus");
@@ -1565,7 +1605,7 @@ function renderDrafts(){
         <button class="btn ghost small" data-photo-add="${di}">${d.photo?"Change photo":"📷 Add photo"}</button>
         ${d.photo?`<button class="btn ghost small" data-photo-rm="${di}">Remove</button>`:""}</div></div>
       <div style="display:flex;gap:8px">
-        <button class="btn" data-save="${di}">Save · +${Math.round(interactionPoints(d))} smiles${d.personIds.length>1?" each":""}</button>
+        <button class="btn" data-save="${di}">Save</button>
         <button class="btn ghost small" data-discard="${di}">Discard</button></div>
     </div>`;
   }).join("");
